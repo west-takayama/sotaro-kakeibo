@@ -1,0 +1,5 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; background: #0b0b1a; color: #e0e0e0; font-family: "Hiragino Sans", -apple-system, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+input:focus, select:focus { border-color: #FF6B6B !important; outline: none; }
