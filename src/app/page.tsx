@@ -178,7 +178,6 @@ export default function Home() {
   const [shI,sShI]=useState(false); const [shE,sShE]=useState(false); const [shA,sShA]=useState(false);
   const [shG,sShG]=useState(false); const [shM,sShM]=useState(false); const [shIn,sShIn]=useState(false);
   const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null);
-  const [aiT,sAiT]=useState(""); const [aiL,sAiL]=useState(false);
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false);
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
@@ -224,12 +223,6 @@ export default function Home() {
     sUpL(false);
   };
 
-  const getAi=async()=>{sAiL(true);try{
-    const sum=`月:${cm} 収入:¥${tI.toLocaleString()} 支出:¥${tE.toLocaleString()}\nカテゴリ:\n${srt.map(([c,v]:any)=>`${c}:¥${v.total.toLocaleString()}(${v.count}件)`).join("\n")}\n年間:収入¥${yD.yI.toLocaleString()} 支出¥${yD.yE.toLocaleString()}\n貸借対照表:総資産¥${tAs.toLocaleString()} 負債¥${tLi.toLocaleString()} 純資産¥${netW.toLocaleString()}`;
-    const r=await fetch("/api/advice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({summary:sum})});
-    const d=await r.json(); sAiT(d.advice||"取得失敗");
-  }catch{sAiT("AI分析でエラーが発生しました。");}sAiL(false);};
-
   const hCC=useCallback((idx:number,val:string)=>{const cl=md.cardExp?.length||0;if(idx<cl)uM((m:any)=>({...m,cardExp:m.cardExp.map((t:any,i:number)=>i===idx?{...t,category:val}:t)}));else uM((m:any)=>({...m,manualExp:m.manualExp.map((t:any,i:number)=>i===(idx-cl)?{...t,category:val}:t)}));},[md.cardExp?.length,cm]);
 
   if(!rdy) return <div style={{minHeight:"100vh",background:"#0b0b1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#888"}}>読み込み中...</div>;
@@ -267,10 +260,8 @@ export default function Home() {
             </div>
           </div>
           {D.goal.target>0&&<div style={cs()}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}><span style={{fontWeight:600,color:"#ccc"}}>🎯 {D.goal.label||"貯金目標"}</span><span style={{fontFamily:"monospace",color:"#FFB347"}}>¥{D.goal.target.toLocaleString()}</span></div><div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:gP+"%",background:gP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:4}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#888"}}><span>年間貯蓄 ¥{yD.yB.toLocaleString()}</span><span style={{color:gP>=100?"#2ECC71":"#FFB347",fontWeight:600}}>{gP.toFixed(0)}%</span></div></div>}
-          <div style={cs({background:"rgba(255,107,107,0.03)",borderColor:"rgba(255,107,107,0.1)"})}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>🤖 アドバイス</h3>
-            {adv.slice(0,4).map((t:any,i:number)=><div key={i} style={{fontSize:11,color:ac[t.ty],padding:"3px 0",lineHeight:1.6}}>{t.i} {t.tx}</div>)}
-            <button onClick={getAi} disabled={aiL} style={{marginTop:8,background:"rgba(155,89,182,0.12)",border:"1px solid rgba(155,89,182,0.25)",color:"#9B59B6",padding:"7px 0",borderRadius:8,fontSize:11,cursor:"pointer",width:"100%",fontWeight:600}}>{aiL?"⏳ 分析中...":"✨ AIに詳しく分析してもらう"}</button>
-            {aiT&&<div style={{marginTop:8,fontSize:11,color:"#ccc",lineHeight:1.7,whiteSpace:"pre-wrap",background:"rgba(155,89,182,0.06)",padding:10,borderRadius:8}}>{aiT}</div>}
+          <div style={cs({background:"rgba(255,107,107,0.03)",borderColor:"rgba(255,107,107,0.1)"})}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>💡 アドバイス</h3>
+            {adv.slice(0,5).map((t:any,i:number)=><div key={i} style={{fontSize:11,color:ac[t.ty],padding:"3px 0",lineHeight:1.6}}>{t.i} {t.tx}</div>)}
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#bbb"}}>支出トップ5</h3>
             {srt.slice(0,5).map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"#888"};return(<div key={cat} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}><span style={{color:"#ccc"}}>{cfg.i} {cat}</span><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{d.total.toLocaleString()}</span></div><div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:(tE>0?d.total/tE*100:0)+"%",background:cfg.c,borderRadius:2}}/></div></div>);})}
