@@ -40,29 +40,36 @@ const LT = [
 ];
 
 // ═══ CSV Parser ═══
+// 半角カナや小書きカナの違いを吸収して照合（PDF明細は半角カナが多い）
+const KN_S = "ァィゥェォッャュョヮ", KN_B = "アイウエオツヤユヨワ";
+function kanaNorm(s: string): string {
+  let r = s.normalize("NFKC");
+  for (let i = 0; i < KN_S.length; i++) r = r.split(KN_S[i]).join(KN_B[i]);
+  return r.toLowerCase();
+}
 function autoCategory(desc: string): string {
-  const d = desc.toLowerCase();
-  const m = (k: string[]) => k.some(x => d.includes(x.toLowerCase()));
-  if (m(["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ"])) return "食費（コンビニ）";
-  if (m(["すき家","吉野家","松屋","マクドナルド","スターバックス","カフェ","レストラン"])) return "食費（外食）";
-  if (m(["楽天ガス","楽天でんき","東京電力","電気","ガス"])) return "光熱費";
-  if (m(["ソフトバンク","楽天モバイル","ドコモ","ブロードバンド"])) return "通信費";
-  if (m(["APPLE COM BILL","Netflix","Spotify","MONESTA"])) return "サブスク";
-  if (m(["プルデンシャル","生命保険"])) return "保険";
-  if (m(["Suica","エネオス","ガソリン"])) return "交通・車";
-  if (m(["フィットネス","FIT365","ジム"])) return "健康";
-  if (m(["動画編集","Udemy","セミナー"])) return "教育・自己投資";
-  if (m(["プレミアムウォーター"])) return "水・飲料";
-  if (m(["ルミネ","ユニクロ","美容院"])) return "美容・衣服";
-  if (m(["ビックカメラ","ヨドバシ"])) return "家電";
-  if (m(["ウエルパーク","ドラッグ"])) return "日用品";
+  const d = kanaNorm(desc);
+  const m = (k: string[]) => k.some(x => d.includes(kanaNorm(x)));
+  if (m(["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ","ミニストップ","ニューデイズ"])) return "食費（コンビニ）";
+  if (m(["すき家","吉野家","松屋","マクドナルド","スターバックス","カフェ","レストラン","ケンタ","モスバーガー","ガスト","サイゼリヤ","スシロー","ペイパービュー"])) return "食費（外食）";
+  if (m(["楽天ガス","楽天でんき","東京電力","電気","ガス","エナジー","電力","でんき"])) return "光熱費";
+  if (m(["ソフトバンク","楽天モバイル","ドコモ","ブロードバンド","通信料","通信","au","povo"])) return "通信費";
+  if (m(["APPLE COM BILL","Netflix","Spotify","MONESTA","CLAUDE","SUBSCRIPTI","OPENAI","ChatGPT","Amazonプライム","Youtube","Adobe"])) return "サブスク";
+  if (m(["プルデンシャル","生命保険","損保","あいおい","東京海上"])) return "保険";
+  if (m(["Suica","PASMO","エネオス","ガソリン","ETC","JR","タクシー","駐車"])) return "交通・車";
+  if (m(["フィットネス","FIT365","ジム","スポーツクラブ"])) return "健康";
+  if (m(["動画編集","Udemy","セミナー","スクール","講座"])) return "教育・自己投資";
+  if (m(["プレミアムウォーター","水道","スイドウ"])) return "水・飲料";
+  if (m(["ルミネ","ユニクロ","美容院","高島屋","ZARA","GU","伊勢丹"])) return "美容・衣服";
+  if (m(["ビックカメラ","ヨドバシ","エディオン","ヤマダ電機"])) return "家電";
+  if (m(["ウエルパ","ドラッグ","クリエイト","マツモトキヨシ","ウェルシア","スギ薬局"])) return "日用品";
   return "その他";
 }
 function parseCSV(text: string): any[] {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const txns: any[] = [];
   for (const line of lines) {
-    const fields = line.split(/[,\t]|\s{2,}/).map(f => f.trim().replace(/^"|"$/g, "")).filter(Boolean);
+    const fields = line.split(/[,\t]/).map(f => f.trim().replace(/^"|"$/g, "")).filter(Boolean);
     if (fields.length < 2) continue;
     let date: string|null = null, amount: number|null = null;
     for (const f of fields) {
@@ -92,7 +99,8 @@ async function extractPdfText(file: File): Promise<string> {
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf");
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
   const buf = await file.arrayBuffer();
-  const doc = await pdfjs.getDocument({ data: buf }).promise;
+  // cMapUrl/cMapPacked は日本語フォント(CMap)のPDFをテキスト化するのに必須
+  const doc = await pdfjs.getDocument({ data: buf, cMapUrl: "/cmaps/", cMapPacked: true }).promise;
   const lines: string[] = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
@@ -116,6 +124,30 @@ async function extractPdfText(file: File): Promise<string> {
     }
   }
   return lines.join("\n");
+}
+
+// ═══ カード明細PDFの行を解析（日付 店名 利用者 支払方法 利用金額 …の表形式に対応）═══
+function parsePdfStatement(text: string): any[] {
+  const txns: any[] = [];
+  const dateRe = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
+  for (const raw of text.split("\n")) {
+    const toks = raw.trim().split(/[\s\t]+/).filter(Boolean);
+    if (toks.length < 4) continue;
+    const dm = toks[0].match(dateRe);
+    if (!dm) continue;
+    // 支払方法（1回払い/リボ/分割/ボーナス）の列を探し、その次が「利用金額」
+    let payIdx = -1;
+    for (let i = 2; i < toks.length; i++) { if (/払い|リボ|分割|ボーナス/.test(toks[i])) { payIdx = i; break; } }
+    if (payIdx < 0 || payIdx + 1 >= toks.length) continue;
+    const amtTok = toks[payIdx + 1].replace(/[¥￥,、円\s]/g, "").replace(/[▲△−]/g, "-");
+    if (!/^-?\d+$/.test(amtTok)) continue;
+    const amount = Math.abs(parseInt(amtTok, 10));
+    if (!amount) continue;
+    const store = (toks.slice(1, Math.max(2, payIdx - 1)).join(" ") || toks[1]).normalize("NFKC");
+    const date = dm[2].padStart(2, "0") + "/" + dm[3].padStart(2, "0");
+    txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store), source: "card" });
+  }
+  return txns;
 }
 
 // ═══ Default card data ═══
@@ -253,7 +285,8 @@ export default function Home() {
     try {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
       const text = isPdf ? await extractPdfText(file) : await file.text();
-      const txns = parseCSV(text);
+      let txns = isPdf ? parsePdfStatement(text) : parseCSV(text);
+      if (txns.length === 0) txns = parseCSV(text); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
         sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
       } else {
