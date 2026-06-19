@@ -62,7 +62,7 @@ function parseCSV(text: string): any[] {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const txns: any[] = [];
   for (const line of lines) {
-    const fields = line.split(/[,\t]/).map(f => f.trim().replace(/^"|"$/g, ""));
+    const fields = line.split(/[,\t]|\s{2,}/).map(f => f.trim().replace(/^"|"$/g, "")).filter(Boolean);
     if (fields.length < 2) continue;
     let date: string|null = null, amount: number|null = null;
     for (const f of fields) {
@@ -85,6 +85,37 @@ function parseCSV(text: string): any[] {
     }
   }
   return txns;
+}
+
+// ═══ PDF Text Extraction (ブラウザ内・pdf.js / 無料・APIなし) ═══
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf");
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjs.getDocument({ data: buf }).promise;
+  const lines: string[] = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    const rows: Record<number, any[]> = {};
+    for (const it of tc.items) {
+      if (!("str" in it) || !it.str) continue;
+      const y = Math.round(it.transform[5]); // 同じ高さ＝同じ行
+      (rows[y] = rows[y] || []).push(it);
+    }
+    const ys = Object.keys(rows).map(Number).sort((a, b) => b - a); // PDFは下が原点
+    for (const y of ys) {
+      const items = rows[y].sort((a, b) => a.transform[4] - b.transform[4]); // 左→右
+      let line = ""; let prevEnd: number | null = null;
+      for (const it of items) {
+        const x = it.transform[4];
+        if (prevEnd != null) { const gap = x - prevEnd; if (gap > 4) line += "\t"; else if (gap > 0.5) line += " "; }
+        line += it.str; prevEnd = x + (it.width || 0);
+      }
+      if (line.trim()) lines.push(line.trim());
+    }
+  }
+  return lines.join("\n");
 }
 
 // ═══ Default card data ═══
@@ -220,11 +251,20 @@ export default function Home() {
   const handleUpload = async (file: File) => {
     sUpL(true); sUpR("");
     try {
-      const text = await file.text();
+      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+      const text = isPdf ? await extractPdfText(file) : await file.text();
       const txns = parseCSV(text);
-      if (txns.length === 0) { sUpR("❌ 取引データを抽出できませんでした。"); }
-      else { uM((m:any)=>({...m,cardExp:[...m.cardExp,...txns]})); sUpR(`✅ ${txns.length}件追加しました！`); }
-    } catch(e:any) { sUpR("❌ "+e.message); }
+      if (txns.length === 0) {
+        sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
+      } else {
+        // ── 蓄積：すでに登録済みの取引（日付・金額・内容が同じ）はスキップ ──
+        const seen = new Set((md.cardExp || []).map((t:any)=>`${t.date}|${t.amount}|${t.description}`));
+        const fresh:any[] = []; let dup = 0;
+        for (const t of txns) { const k=`${t.date}|${t.amount}|${t.description}`; if (seen.has(k)) { dup++; continue; } seen.add(k); fresh.push(t); }
+        if (fresh.length === 0) sUpR(`ℹ️ ${txns.length}件すべて登録済みでした（重複スキップ）。`);
+        else { uM((m:any)=>({...m,cardExp:[...m.cardExp,...fresh]})); sUpR(`✅ ${fresh.length}件を「${cm}」に追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}`); }
+      }
+    } catch(e:any) { sUpR("❌ 読み取りエラー: "+(e?.message||e)); }
     sUpL(false);
   };
 
@@ -257,7 +297,7 @@ export default function Home() {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:12}}>
             <button onClick={()=>sShI(true)} style={{background:"rgba(46,204,113,0.03)",border:"1px dashed rgba(46,204,113,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💼</div><div style={{fontSize:10,color:"#2ECC71",fontWeight:600}}>収入</div></button>
             <button onClick={()=>sShE(true)} style={{background:"rgba(255,107,107,0.03)",border:"1px dashed rgba(255,107,107,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💸</div><div style={{fontSize:10,color:"#FF6B6B",fontWeight:600}}>支出</div></button>
-            <button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.03)",border:"1px dashed rgba(52,152,219,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💳</div><div style={{fontSize:10,color:"#3498DB",fontWeight:600}}>明細CSV</div></button>
+            <button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.03)",border:"1px dashed rgba(52,152,219,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💳</div><div style={{fontSize:10,color:"#3498DB",fontWeight:600}}>明細取込</div></button>
           </div>
           <div onClick={()=>sPg("statement")} style={cs({background:"linear-gradient(135deg,rgba(52,152,219,0.06),rgba(46,204,113,0.04))",borderColor:"rgba(52,152,219,0.12)",cursor:"pointer"})}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontSize:10,color:"#999"}}>純資産（総資産 − 負債）</span><span style={{fontSize:9,color:"#666"}}>📑 決算書 ›</span></div>
@@ -377,7 +417,7 @@ export default function Home() {
             {shIn&&<div style={{marginTop:10,fontSize:11,color:"#bbb",lineHeight:1.8}}><p style={{margin:"0 0 4px"}}><strong>iPhone:</strong> Safari → 共有（□↑）→ ホーム画面に追加</p><p style={{margin:0}}><strong>Android:</strong> Chrome → ⋮ → ホーム画面に追加</p></div>}
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>📅 月の管理</h3><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>sD((p:any)=>({...p,cur:k}))} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:k===cm?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.3)":"#333"),color:k===cm?"#FF6B6B":"#aaa"}}>{k}</button>)}<button onClick={()=>sShM(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.04)",border:"1px dashed #555",color:"#888"}}>+ 新規</button></div></div>
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社のCSVをアップロードして取引を追加できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 CSVをアップロード</button></div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>}</span><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div></div>
           <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(DEF);}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
@@ -394,14 +434,15 @@ export default function Home() {
 
       <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加"><FI label="カテゴリ" type="select" value={fEC} onChange={sfEC}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</FI><FI label="金額" type="amount" value={fEA} onChange={sfEA}/><FI label="日付" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/><button onClick={addE} style={B1}>追加</button></BS>
 
-      <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細CSVをアップロード">
-        <p style={{fontSize:12,color:"#bbb",margin:"0 0 12px",lineHeight:1.6}}>カード会社からダウンロードしたCSVファイルを選択してください。</p>
-        <div onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".csv,.tsv,.txt";inp.onchange=(e:any)=>e.target.files[0]&&handleUpload(e.target.files[0]);inp.click();}}
+      <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
+        <p style={{fontSize:12,color:"#bbb",margin:"0 0 8px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。今表示中の月「{cm}」に追加されます。</p>
+        <p style={{fontSize:10,color:"#777",margin:"0 0 12px",lineHeight:1.6}}>※ 同じ取引（日付・金額・内容が一致）は自動でスキップされるので、何度アップロードしても重複しません。PDFは文字情報のあるもののみ対応（画像スキャンは不可）。</p>
+        <div onClick={()=>{if(upL)return;const inp=document.createElement("input");inp.type="file";inp.accept=".csv,.tsv,.txt,.pdf,application/pdf";inp.onchange=(e:any)=>e.target.files[0]&&handleUpload(e.target.files[0]);inp.click();}}
           style={{border:"2px dashed #333",borderRadius:14,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.02)",marginBottom:12}}>
           {upL?<div><div style={{fontSize:28}}>⏳</div><p style={{color:"#999",fontSize:12,margin:"6px 0 0"}}>読み取り中...</p></div>
-          :<div><div style={{fontSize:28}}>📄</div><p style={{color:"#ccc",fontSize:13,margin:"6px 0 4px",fontWeight:600}}>タップして選択</p><p style={{color:"#888",fontSize:11,margin:0}}>CSV / TSV</p></div>}
+          :<div><div style={{fontSize:28}}>📄</div><p style={{color:"#ccc",fontSize:13,margin:"6px 0 4px",fontWeight:600}}>タップして選択</p><p style={{color:"#888",fontSize:11,margin:0}}>CSV / TSV / PDF</p></div>}
         </div>
-        {upR&&<div style={{padding:10,borderRadius:8,background:upR.startsWith("✅")?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":"#FF6B6B",fontSize:12}}>{upR}</div>}
+        {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:12}}>{upR}</div>}
       </BS>
 
       <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
