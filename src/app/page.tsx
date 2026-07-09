@@ -289,7 +289,7 @@ export default function Home() {
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
-  useEffect(()=>{sQ("");sFCat("");sEI(null);},[cm]); // 月を切り替えたら絞り込みをリセット
+  useEffect(()=>{sQ("");sFCat("");sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
   const allE=useMemo(()=>[...(md.cardExp||[]),...(md.manualExp||[])],[md]);
@@ -299,7 +299,20 @@ export default function Home() {
   const bC=useMemo(()=>{const m:any={}; allE.forEach((t:any)=>{if(!m[t.category]) m[t.category]={total:0,count:0,items:[]};m[t.category].total+=t.amount;m[t.category].count++;m[t.category].items.push(t);}); return m;},[allE]);
   const fxT=useMemo(()=>allE.filter((t:any)=>EC[t.category]?.t==="f").reduce((s:number,t:any)=>s+t.amount,0),[allE]);
   const srt=useMemo(()=>Object.entries(bC).sort((a:any,b:any)=>b[1].total-a[1].total),[bC]);
-  const yD=useMemo(()=>{const y=cm.slice(0,4);const ms=Object.entries(D.months).filter(([k])=>k.startsWith(y)).sort((a,b)=>a[0].localeCompare(b[0]));let yI=0,yE=0;const ch=ms.map(([k,v]:any)=>{const i=v.incomes.reduce((s:number,x:any)=>s+x.amount,0);const e=[...(v.cardExp||[]),...(v.manualExp||[])].reduce((s:number,x:any)=>s+x.amount,0);yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e};});return{y,yI,yE,yB:yI-yE,ch};},[D.months,cm]);
+  const yD=useMemo(()=>{
+    const y=cm.slice(0,4);const ms=Object.entries(D.months).filter(([k])=>k.startsWith(y)).sort((a,b)=>a[0].localeCompare(b[0]));
+    let yI=0,yE=0,mCount=0;const catY:Record<string,number>={};
+    const ch=ms.map(([k,v]:any)=>{
+      const exps=[...(v.cardExp||[]),...(v.manualExp||[])];
+      const i=v.incomes.reduce((s:number,x:any)=>s+x.amount,0);
+      const e=exps.reduce((s:number,x:any)=>s+x.amount,0);
+      exps.forEach((x:any)=>{catY[x.category]=(catY[x.category]||0)+x.amount;});
+      if(i>0||e>0)mCount++;
+      yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e};
+    });
+    const catTop=Object.entries(catY).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    return{y,yI,yE,yB:yI-yE,ch,mCount,catTop};
+  },[D.months,cm]);
   const tAs=useMemo(()=>(D.assets||[]).reduce((s:number,a:any)=>s+a.amount,0),[D.assets]);
   const tLi=useMemo(()=>(D.liabilities||[]).reduce((s:number,a:any)=>s+a.amount,0),[D.liabilities]);
   const netW=tAs-tLi;
@@ -431,6 +444,24 @@ export default function Home() {
     return l;
   },[allE,q,fCat,sortBy]);
   const listSum=useMemo(()=>listView.reduce((s:number,t:any)=>s+t.amount,0),[listView]);
+  // 固定費・サブスク一覧（同じ店をまとめて月額と年換算を出す）
+  const fixedList=useMemo(()=>{
+    const map:Record<string,{desc:string,cat:string,total:number,count:number}>={};
+    allE.forEach((t:any)=>{if(EC[t.category]?.t!=="f")return;const k=kanaNorm(t.description||"");const e=map[k]||(map[k]={desc:t.description,cat:t.category,total:0,count:0});e.total+=t.amount;e.count++;});
+    return Object.values(map).sort((a,b)=>b.total-a.total);
+  },[allE]);
+  const fixedSum=useMemo(()=>fixedList.reduce((s,x)=>s+x.total,0),[fixedList]);
+  // 支出カレンダー（日別合計）
+  const [selDay,sSelDay]=useState<number|null>(null);
+  const calData=useMemo(()=>{
+    const byDay:Record<number,{total:number,items:any[]}>={};
+    allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const d=parseInt(m[2],10);if(!d||d>31)return;const e=byDay[d]||(byDay[d]={total:0,items:[]});e.total+=t.amount;e.items.push(t);});
+    const [y,mo]=cm?cm.split("-").map(Number):[0,0];
+    const dim=y?new Date(y,mo,0).getDate():30;
+    const off=y?new Date(y,mo-1,1).getDay():0;
+    const max=Math.max(1,...Object.values(byDay).map(v=>v.total));
+    return{byDay,dim,off,max};
+  },[allE,cm]);
 
   // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
   const reCat=useCallback(()=>{
@@ -535,6 +566,8 @@ export default function Home() {
               <SR l="収益（年間）" v={yD.yI} c="#2ECC71"/>
               <SR l="費用（年間）" v={yD.yE} c="#FF6B6B"/>
               <SR l="当期純利益（年間）" v={yD.yB} c={yD.yB>=0?"#2ECC71":"#E74C3C"} bold signed/>
+              {yD.mCount>1&&<SR l={`月平均支出（${yD.mCount}ヶ月）`} v={Math.round(yD.yE/yD.mCount)} c="#FFB347" sm/>}
+              {yD.mCount>1&&yD.catTop.length>0&&<div style={{marginTop:6}}><div style={{fontSize:9,color:"#888",marginBottom:2}}>年間の支出トップ3</div>{yD.catTop.map(([c,v]:any)=><SR key={c} l={(EC[c]?.i||"")+" "+c} v={v} c={EC[c]?.c||"#888"} sm/>)}</div>}
               {yD.ch.length>1&&<div style={{marginTop:8}}><ResponsiveContainer width="100%" height={120}><BarChart data={yD.ch} margin={{top:8,right:4,left:-20,bottom:0}}><XAxis dataKey="name" tick={{fill:"#888",fontSize:9}} axisLine={false} tickLine={false}/><YAxis hide/><Tooltip content={<TT/>}/><Bar dataKey="income" fill="#2ECC71" radius={[3,3,0,0]} name="収入"/><Bar dataKey="expense" fill="#FF6B6B" radius={[3,3,0,0]} name="支出"/></BarChart></ResponsiveContainer></div>}
             </div>
           </div>
@@ -551,6 +584,40 @@ export default function Home() {
                 </div>
                 <div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:w+"%",background:d>0?"#FF6B6B":"#2ECC71",borderRadius:2}}/></div>
               </div>);})}
+          </div>}
+
+          {/* ── 支出カレンダー ── */}
+          {tE>0&&<div style={cs()}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🗓 支出カレンダー</h3>
+            <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>色が濃い日ほど支出が多い日。タップで内訳を表示</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+              {["日","月","火","水","木","金","土"].map(d=><div key={d} style={{textAlign:"center",fontSize:8,color:"#666",padding:"2px 0"}}>{d}</div>)}
+              {Array.from({length:calData.off}).map((_,i)=><div key={"e"+i}/>)}
+              {Array.from({length:calData.dim}).map((_,i)=>{const d=i+1;const v=calData.byDay[d];const a=v?0.12+0.55*(v.total/calData.max):0;const sel=selDay===d;
+                return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:6,cursor:v?"pointer":"default",background:v?`rgba(255,107,107,${a})`:"rgba(255,255,255,0.02)",border:sel?"1px solid #FF6B6B":"1px solid transparent"}}>
+                  <span style={{fontSize:9,color:v?"#fff":"#555",fontWeight:v?700:400}}>{d}</span>
+                  {v&&<span style={{fontSize:7,color:"rgba(255,255,255,0.85)",fontFamily:"monospace"}}>{v.total>=10000?Math.round(v.total/1000)+"k":v.total>=1000?(v.total/1000).toFixed(1)+"k":v.total}</span>}
+                </div>);})}
+            </div>
+            {selDay&&calData.byDay[selDay]&&<div style={{marginTop:10,borderTop:"1px dashed rgba(255,255,255,0.1)",paddingTop:8}}>
+              <div style={{fontSize:11,color:"#FFB347",fontWeight:600,marginBottom:4}}>{cm.slice(5)}/{String(selDay).padStart(2,"0")} の支出 ¥{calData.byDay[selDay].total.toLocaleString()}（{calData.byDay[selDay].items.length}件）</div>
+              {calData.byDay[selDay].items.map((t:any)=><div key={t.id} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#ccc",padding:"2px 0"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{EC[t.category]?.i} {t.description}</span><span style={{fontFamily:"monospace",flexShrink:0}}>¥{t.amount.toLocaleString()}</span></div>)}
+            </div>}
+          </div>}
+
+          {/* ── 固定費・サブスク一覧 ── */}
+          {fixedList.length>0&&<div style={cs()}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#4ECDC4"}}>🔁 固定費・サブスク一覧</h3>
+            <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>毎月かかっているもの。年換算で見ると見直しの効果がわかります</p>
+            {fixedList.map((f)=>{const cfg=EC[f.cat]||{i:"📦",c:"#888"};return(
+              <div key={f.desc} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
+                <span style={{color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{cfg.i} {f.desc}{f.count>1&&<span style={{color:"#666",fontSize:9}}> ×{f.count}</span>}</span>
+                <span style={{flexShrink:0}}><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{f.total.toLocaleString()}</span><span style={{fontSize:8,color:"#777"}}> /月（年¥{(f.total*12).toLocaleString()}）</span></span>
+              </div>);})}
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:8,paddingTop:6,borderTop:"1px solid rgba(78,205,196,0.2)",fontSize:11}}>
+              <span style={{color:"#4ECDC4",fontWeight:700}}>月合計 ¥{fixedSum.toLocaleString()}</span>
+              <span style={{color:"#FFB347",fontWeight:700,fontFamily:"monospace"}}>年換算 ¥{(fixedSum*12).toLocaleString()}</span>
+            </div>
           </div>}
 
           {/* ── 費用の内訳 ── */}
