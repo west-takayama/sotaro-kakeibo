@@ -230,6 +230,8 @@ function genAdvice(tI:number, tE:number, bC:any, x:any={}) {
   if (x.histUp > 0) t.push({ty:"good",i:"🚀",tx:`純資産が前回更新から＋¥${x.histUp.toLocaleString()}。確実に前進しています！`});
   if (x.nwTgt > 0 && x.netW < x.nwTgt) t.push({ty:"info",i:"🎯",tx:`目標純資産まであと¥${(x.nwTgt - x.netW).toLocaleString()}（達成率${x.nwP.toFixed(0)}%）。`});
   else if (x.nwTgt > 0) t.push({ty:"good",i:"👑",tx:"目標純資産を達成！おめでとうございます。次の目標を設定しましょう。"});
+  // ⑦ データ保護の案内
+  if (x.backup) t.push({ty:"info",i:"💾",tx:x.backup.days==null?"データはこの端末だけに保存されています。設定からバックアップを書き出しておくと安心です。":`最後のバックアップから${x.backup.days}日経過。設定から書き出しておきましょう。`});
   return t;
 }
 
@@ -348,12 +350,24 @@ export default function Home() {
     const h=D.assetHist;let histUp=0,isPeak=false;
     if(h.length>=2){const a=h[h.length-1],b=h[h.length-2];const dv=(a.net??a.total??0)-(b.net??b.total??0);if(dv>0)histUp=dv;
       const last=a.net??a.total??0;const prevMax=Math.max(...h.slice(0,-1).map((z:any)=>z.net??z.total??0));if(last>prevMax&&last>0)isPeak=true;}
-    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,
+    // バックアップの鮮度（データがあるのに30日以上 or 一度も書き出していない場合に案内）
+    let backup:any=null;
+    const totalTx=Object.values(D.months).reduce((s:number,v:any)=>s+((v.cardExp||[]).length+(v.manualExp||[]).length),0);
+    if(totalTx>0){
+      if(!(D as any).lastBackup) backup={days:null};
+      else{const days=Math.floor((Date.now()-new Date((D as any).lastBackup).getTime())/86400000);if(days>=30)backup={days};}
+    }
+    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,
       bud:bud&&bud.total>0?{total:bud.total,spent:bud.spent,perDay:bud.perDay}:null,
       overCat:bud?.overCats?.[0]||null,
       upCat:ups.length&&ups[0][1]>=3000?[ups[0][0],ups[0][1]]:null,
       downCat:downs.length&&-downs[0][1]>=3000?[downs[0][0],-downs[0][1]]:null};
-  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud]);
+  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud,D.months,D]);
+  // 完全に空の状態か（初回ガイド表示用）
+  const isEmpty=useMemo(()=>{
+    const anyTx=Object.values(D.months).some((v:any)=>((v.cardExp||[]).length+(v.manualExp||[]).length+(v.incomes||[]).length)>0);
+    return !anyTx&&(D.assets||[]).length===0&&(D.liabilities||[]).length===0;
+  },[D.months,D.assets,D.liabilities]);
   // ── 実績バッジ（続けること自体を褒める）──
   const badges=useMemo(()=>{
     const out:string[]=[];
@@ -406,7 +420,18 @@ export default function Home() {
     sUpL(false);
   };
 
-  const exportData=()=>{try{const blob=new Blob([JSON.stringify(D,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
+  const dl=(content:BlobPart,mime:string,name:string)=>{const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);};
+  const exportData=()=>{try{dl(JSON.stringify(D,null,2),"application/json",`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`);sD((p:any)=>({...p,lastBackup:new Date().toISOString().slice(0,10)}));}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
+  // 全期間の明細をExcelで開けるCSVに（BOM付きUTF-8）
+  const exportCSV=()=>{try{
+    const rows:string[][]=[["月","日付","種別","内容","カテゴリ","金額"]];
+    Object.entries(D.months).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,v]:any)=>{
+      (v.incomes||[]).forEach((i:any)=>{const t=IT.find(x=>x.id===i.type);rows.push([k,"","収入",(t?.l||"収入")+(i.note?`（${i.note}）`:""),"",String(i.amount)]);});
+      [...(v.cardExp||[]),...(v.manualExp||[])].forEach((t:any)=>rows.push([k,t.date||"",t.source==="card"?"カード":"手入力",t.description||"",t.category||"",String(t.amount)]));
+    });
+    const csv="\uFEFF"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+    dl(csv,"text/csv;charset=utf-8",`kakeibo-${new Date().toISOString().slice(0,10)}.csv`);
+  }catch(e:any){alert("CSV書き出しに失敗しました: "+e.message);}};
   const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
   // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
@@ -488,6 +513,13 @@ export default function Home() {
               <button onClick={()=>shiftMonth(1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>›</button>
             </div>
           </div>
+          {isEmpty&&<div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.08),rgba(255,179,71,0.05))",borderColor:"rgba(255,107,107,0.2)"})}>
+            <h3 style={{fontSize:13,fontWeight:700,margin:"0 0 4px",color:"#eee"}}>👋 ようこそ！3ステップで始めましょう</h3>
+            <p style={{fontSize:10,color:"#999",margin:"0 0 10px"}}>データはこの端末の中だけに保存。無料・登録不要・外部送信なし。</p>
+            <button onClick={()=>sShUp(true)} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(52,152,219,0.08)",border:"1px solid rgba(52,152,219,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>1️⃣ 💳 <b>カード明細（CSV/PDF）を取り込む</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>自動でカテゴリ仕分けされます</span></button>
+            <button onClick={()=>sShI(true)} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>2️⃣ 💼 <b>今月の収入を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>貯蓄率が見えるようになります</span></button>
+            <button onClick={()=>sPg("assets")} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer"}}>3️⃣ 💎 <b>資産・負債を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>純資産と決算書(B/S)が完成します</span></button>
+          </div>}
           <div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.06),rgba(255,179,71,0.04))",borderColor:"rgba(255,107,107,0.12)",padding:16})}>
             <div style={{fontSize:10,color:"#999"}}>今月の収支</div>
             <div style={{fontSize:26,fontWeight:800,fontFamily:"monospace",color:bal>=0?"#2ECC71":"#E74C3C",marginBottom:6}}>{bal>=0?"+":""}¥{bal.toLocaleString()}</div>
@@ -734,7 +766,9 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>📅 月の管理</h3><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>sD((p:any)=>({...p,cur:k}))} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:k===cm?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.3)":"#333"),color:k===cm?"#FF6B6B":"#aaa"}}>{k}</button>)}<button onClick={()=>sShM(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.04)",border:"1px dashed #555",color:"#888"}}>+ 新規</button></div></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>}</span><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div></div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
+            {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
+            <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
           <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(freshState());}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
         </div>)}
       </div>
