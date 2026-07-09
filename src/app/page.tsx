@@ -309,7 +309,7 @@ export default function Home() {
       const e=exps.reduce((s:number,x:any)=>s+x.amount,0);
       exps.forEach((x:any)=>{catY[x.category]=(catY[x.category]||0)+x.amount;});
       if(i>0||e>0)mCount++;
-      yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e};
+      yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e,sr:i>0?Math.max(0,Math.round((i-e)/i*100)):null};
     });
     const catTop=Object.entries(catY).sort((a,b)=>b[1]-a[1]).slice(0,3);
     return{y,yI,yE,yB:yI-yE,ch,mCount,catTop};
@@ -573,7 +573,7 @@ export default function Home() {
             {adv.slice(0,7).map((t:any,i:number)=><div key={i} style={{fontSize:11,color:ac[t.ty],padding:"3px 0",lineHeight:1.6}}>{t.i} {t.tx}</div>)}
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#bbb"}}>支出トップ5</h3>
-            {srt.slice(0,5).map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"#888"};return(<div key={cat} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}><span style={{color:"#ccc"}}>{cfg.i} {cat}</span><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{d.total.toLocaleString()}</span></div><div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:(tE>0?d.total/tE*100:0)+"%",background:cfg.c,borderRadius:2}}/></div></div>);})}
+            {srt.slice(0,5).map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"#888"};return(<div key={cat} onClick={()=>{sFCat(cat);sPg("list");}} style={{marginBottom:6,cursor:"pointer"}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}><span style={{color:"#ccc"}}>{cfg.i} {cat} <span style={{color:"#555",fontSize:8}}>›</span></span><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{d.total.toLocaleString()}</span></div><div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:(tE>0?d.total/tE*100:0)+"%",background:cfg.c,borderRadius:2}}/></div></div>);})}
           </div>
         </div>)}
 
@@ -601,6 +601,15 @@ export default function Home() {
               {yD.mCount>1&&<SR l={`月平均支出（${yD.mCount}ヶ月）`} v={Math.round(yD.yE/yD.mCount)} c="#FFB347" sm/>}
               {yD.mCount>1&&yD.catTop.length>0&&<div style={{marginTop:6}}><div style={{fontSize:9,color:"#888",marginBottom:2}}>年間の支出トップ3</div>{yD.catTop.map(([c,v]:any)=><SR key={c} l={(EC[c]?.i||"")+" "+c} v={v} c={EC[c]?.c||"#888"} sm/>)}</div>}
               {yD.ch.length>1&&<div style={{marginTop:8}}><ResponsiveContainer width="100%" height={120}><BarChart data={yD.ch} margin={{top:8,right:4,left:-20,bottom:0}}><XAxis dataKey="name" tick={{fill:"#888",fontSize:9}} axisLine={false} tickLine={false}/><YAxis hide/><Tooltip content={<TT/>}/><Bar dataKey="income" fill="#2ECC71" radius={[3,3,0,0]} name="収入"/><Bar dataKey="expense" fill="#FF6B6B" radius={[3,3,0,0]} name="支出"/></BarChart></ResponsiveContainer></div>}
+              {yD.ch.filter((c:any)=>c.sr!=null).length>1&&<div style={{marginTop:8}}>
+                <div style={{fontSize:9,color:"#888",marginBottom:2}}>貯蓄率の推移（%）</div>
+                <ResponsiveContainer width="100%" height={90}><AreaChart data={yD.ch} margin={{top:6,right:8,left:-24,bottom:0}}>
+                  <defs><linearGradient id="srg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3498DB" stopOpacity={0.3}/><stop offset="95%" stopColor="#3498DB" stopOpacity={0}/></linearGradient></defs>
+                  <XAxis dataKey="name" tick={{fill:"#888",fontSize:9}} axisLine={false} tickLine={false}/><YAxis hide domain={[0,100]}/>
+                  <Tooltip content={({active,payload}:any)=>active&&payload?.[0]?.payload?.sr!=null?<div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"5px 9px",fontSize:11,color:"#ddd"}}>{payload[0].payload.name} 貯蓄率 <b style={{color:"#3498DB"}}>{payload[0].payload.sr}%</b></div>:null}/>
+                  <Area type="monotone" dataKey="sr" stroke="#3498DB" fill="url(#srg)" strokeWidth={2} connectNulls/>
+                </AreaChart></ResponsiveContainer>
+              </div>}
             </div>
           </div>
 
@@ -609,9 +618,9 @@ export default function Home() {
             <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>📊 前月比 <span style={{fontSize:9,color:"#777",fontWeight:400}}>{prevKey} → {cm}</span></h3>
             <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>支出合計 {tE<=prev.tE?"−":"＋"}¥{Math.abs(tE-prev.tE).toLocaleString()}（¥{prev.tE.toLocaleString()} → ¥{tE.toLocaleString()}）</p>
             {catDelta.slice(0,6).map(([c,d])=>{const cfg=EC[c]||{i:"📦",c:"#888"};const w=Math.min(100,Math.abs(d)/Math.max(...catDelta.map(([,x])=>Math.abs(x)))*100);
-              return(<div key={c} style={{marginBottom:6}}>
+              return(<div key={c} onClick={()=>{sFCat(c);sPg("list");}} style={{marginBottom:6,cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
-                  <span style={{color:"#ccc"}}>{cfg.i} {c}</span>
+                  <span style={{color:"#ccc"}}>{cfg.i} {c} <span style={{color:"#555",fontSize:8}}>›</span></span>
                   <span style={{fontFamily:"monospace",fontWeight:600,color:d>0?"#FF6B6B":"#2ECC71"}}>{d>0?"＋":"−"}¥{Math.abs(d).toLocaleString()}</span>
                 </div>
                 <div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:w+"%",background:d>0?"#FF6B6B":"#2ECC71",borderRadius:2}}/></div>
@@ -642,7 +651,7 @@ export default function Home() {
             <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#4ECDC4"}}>🔁 固定費・サブスク一覧</h3>
             <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>毎月かかっているもの。年換算で見ると見直しの効果がわかります</p>
             {fixedList.map((f)=>{const cfg=EC[f.cat]||{i:"📦",c:"#888"};return(
-              <div key={f.desc} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
+              <div key={f.desc} onClick={()=>{sQ(f.desc);sFCat("");sPg("list");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11,cursor:"pointer"}}>
                 <span style={{color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{cfg.i} {f.desc}{f.count>1&&<span style={{color:"#666",fontSize:9}}> ×{f.count}</span>}</span>
                 <span style={{flexShrink:0}}><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{f.total.toLocaleString()}</span><span style={{fontSize:8,color:"#777"}}> /月（年¥{(f.total*12).toLocaleString()}）</span></span>
               </div>);})}
@@ -765,6 +774,23 @@ export default function Home() {
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>📅 月の管理</h3><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>sD((p:any)=>({...p,cur:k}))} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:k===cm?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.3)":"#333"),color:k===cm?"#FF6B6B":"#aaa"}}>{k}</button>)}<button onClick={()=>sShM(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.04)",border:"1px dashed #555",color:"#888"}}>+ 新規</button></div></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
+          {Object.keys(D.rules||{}).length>0&&<div style={cs()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#9B59B6"}}>🧠 学習した仕分けルール（{Object.keys(D.rules).length}件）</h3>
+              <button onClick={()=>{if(confirm("学習したルールを全て削除しますか？"))sD((p:any)=>({...p,rules:{}}));}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"3px 8px",borderRadius:5,fontSize:10,cursor:"pointer"}}>全削除</button>
+            </div>
+            <p style={{fontSize:10,color:"#888",margin:"4px 0 8px"}}>カテゴリを手で直したときに覚えた「店名→カテゴリ」。間違えて覚えたものは×で削除できます。</p>
+            <div style={{maxHeight:200,overflow:"auto"}}>
+              {Object.entries(D.rules).map(([k,v]:any)=>(
+                <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11,borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                  <span style={{color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{k}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                    <span style={{fontSize:10,color:EC[v]?.c||"#888"}}>{EC[v]?.i}{v}</span>
+                    <button onClick={()=>sD((p:any)=>{const r={...p.rules};delete r[k];return{...p,rules:r};})} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button>
+                  </div>
+                </div>))}
+            </div>
+          </div>}
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>}</span><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
@@ -823,7 +849,11 @@ export default function Home() {
       <BS open={shG} onClose={()=>sShG(false)} title="🎯 目標を設定"><FI label="目標純資産額（資産−負債）" type="amount" value={fNWA} onChange={sfNWA} placeholder="例: 10000000"/><div style={{borderTop:"1px dashed rgba(255,255,255,0.1)",margin:"4px 0 12px"}}/><FI label="年間の貯蓄目標額" type="amount" value={fGA} onChange={sfGA} placeholder="例: 1000000"/><FI label="目標名（貯蓄）" value={fGL} onChange={sfGL} placeholder="例: 旅行資金"/><button onClick={()=>{sD((p:any)=>({...p,goal:{target:Number(fGA)||0,label:fGL,nw:Number(fNWA)||0}}));sShG(false);}} style={B1}>設定</button></BS>
 
       <BS open={shM} onClose={()=>sShM(false)} title="📅 月を選択・追加">
-        {Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>{sD((p:any)=>({...p,cur:k}));sShM(false);}} style={{display:"block",width:"100%",padding:"10px 12px",marginBottom:4,borderRadius:8,fontSize:13,cursor:"pointer",textAlign:"left",background:k===cm?"rgba(255,107,107,0.12)":"rgba(255,255,255,0.03)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.25)":"#333"),color:k===cm?"#FF6B6B":"#ccc"}}>📅 {k} {k===cm&&"（表示中）"}</button>)}
+        {Object.keys(D.months).sort().map(k=>{const v=D.months[k];const i=(v.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);const e=[...(v.cardExp||[]),...(v.manualExp||[])].reduce((s:number,x:any)=>s+x.amount,0);const b=i-e;return(
+        <button key={k} onClick={()=>{sD((p:any)=>({...p,cur:k}));sShM(false);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",padding:"10px 12px",marginBottom:4,borderRadius:8,fontSize:13,cursor:"pointer",textAlign:"left",background:k===cm?"rgba(255,107,107,0.12)":"rgba(255,255,255,0.03)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.25)":"#333"),color:k===cm?"#FF6B6B":"#ccc"}}>
+          <span>📅 {k} {k===cm&&<span style={{fontSize:10}}>（表示中）</span>}</span>
+          <span style={{fontFamily:"monospace",fontSize:10,color:(i===0&&e===0)?"#666":b>=0?"#2ECC71":"#E74C3C"}}>{(i===0&&e===0)?"データなし":`${b>=0?"+":"−"}¥${Math.abs(b).toLocaleString()}`}</span>
+        </button>);})}
         <div style={{marginTop:12}}><FI label="新しい月（YYYY-MM）" value={fNM} onChange={sfNM} placeholder="例: 2026-04"/><button onClick={()=>{if(!fNM)return;sD((p:any)=>({...p,months:{...p.months,[fNM]:p.months[fNM]||{incomes:[],manualExp:[],cardExp:[]}},cur:fNM}));sfNM("");sShM(false);}} style={B1}>追加して切替</button></div>
       </BS>
     </div>
