@@ -291,7 +291,6 @@ export default function Home() {
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
-  useEffect(()=>{sQ("");sFCat("");sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
   const allE=useMemo(()=>[...(md.cardExp||[]),...(md.manualExp||[])],[md]);
@@ -487,6 +486,7 @@ export default function Home() {
     const max=Math.max(1,...Object.values(byDay).map(v=>v.total));
     return{byDay,dim,off,max};
   },[allE,cm]);
+  useEffect(()=>{sQ("");sFCat("");sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
 
   // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
   const reCat=useCallback(()=>{
