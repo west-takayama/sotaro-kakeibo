@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 
 // ═══ Storage ═══
@@ -281,6 +281,8 @@ export default function Home() {
   const [q,sQ]=useState(""); const [fCat,sFCat]=useState(""); const [sortBy,sSortBy]=useState<"date"|"amount">("date");
   const [shT,sShT]=useState(false); const [eTx,sETx]=useState<any>(null);
   const [fTD,sfTD]=useState(""); const [fTN,sfTN]=useState(""); const [fTA,sfTA]=useState(""); const [fTC,sfTC]=useState("その他");
+  const [toast,sToast]=useState<string|null>(null); const toastT=useRef<any>(null);
+  const showToast=useCallback((msg:string)=>{sToast(msg);clearTimeout(toastT.current);toastT.current=setTimeout(()=>sToast(null),2200);},[]);
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false);
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
@@ -388,13 +390,14 @@ export default function Home() {
 
   const uM=(fn:any)=>sD((p:any)=>({...p,months:{...p.months,[cm]:fn(p.months[cm]||{incomes:[],manualExp:[],cardExp:[]})}}));
   const shiftMonth=(dir:number)=>{if(!cm)return;const [y,m]=cm.split("-").map(Number);const d=new Date(y,(m-1)+dir,1);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;sD((p:any)=>({...p,months:{...p.months,[k]:p.months[k]||{incomes:[],manualExp:[],cardExp:[]}},cur:k}));};
-  const addI=()=>{if(!fIA||Number(fIA)<=0)return;uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:Number(fIA),note:fIN,id:Date.now()}]}));sfIA("");sfIN("");sShI(false);};
-  const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));sfEA("");sfEN("");sfED("");sShE(false);};
+  const addI=()=>{if(!fIA||Number(fIA)<=0)return;uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:Number(fIA),note:fIN,id:Date.now()}]}));showToast(`✅ 収入 ¥${Number(fIA).toLocaleString()} を追加しました`);sfIA("");sfIN("");sShI(false);};
+  // 支出は連続入力できるようモーダルを閉じない（金額・内容だけクリア）
+  const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
   const snap=(p:any,assets:any[],liabs:any[])=>{const now=new Date().toISOString().slice(0,10);const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
   const openAs=(a?:any)=>{if(a){sfAT(a.type);sfAA(String(a.amount));sfAN(a.note||"");sEAsId(a.id);}else{sfAT("savings");sfAA("");sfAN("");sEAsId(null);}sShA(true);};
   const openLi=(a?:any)=>{if(a){sfLT(a.type);sfLA(String(a.amount));sfLN(a.note||"");sELiId(a.id);}else{sfLT("loan_home");sfLA("");sfLN("");sELiId(null);}sShL(true);};
-  const addAs=()=>{if(!fAA)return;sD((p:any)=>{const na=[...(p.assets||[]).filter((a:any)=>a.id!==eAsId&&a.type!==fAT),{type:fAT,amount:Number(fAA),note:fAN,id:eAsId||Date.now()}];return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});sfAA("");sfAN("");sEAsId(null);sShA(false);};
-  const addLi=()=>{if(!fLA)return;sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId&&a.type!==fLT),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});sfLA("");sfLN("");sELiId(null);sShL(false);};
+  const addAs=()=>{if(!fAA)return;sD((p:any)=>{const na=[...(p.assets||[]).filter((a:any)=>a.id!==eAsId&&a.type!==fAT),{type:fAT,amount:Number(fAA),note:fAN,id:eAsId||Date.now()}];return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});showToast("✅ 資産を更新しました");sfAA("");sfAN("");sEAsId(null);sShA(false);};
+  const addLi=()=>{if(!fLA)return;sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId&&a.type!==fLT),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});showToast("✅ 負債を更新しました");sfLA("");sfLN("");sELiId(null);sShL(false);};
   const delAs=(id:number)=>sD((p:any)=>{const na=(p.assets||[]).filter((a:any)=>a.id!==id);return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});
   const delLi=(id:number)=>sD((p:any)=>{const nl=(p.liabilities||[]).filter((a:any)=>a.id!==id);return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});
 
@@ -420,7 +423,7 @@ export default function Home() {
   };
 
   const dl=(content:BlobPart,mime:string,name:string)=>{const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);};
-  const exportData=()=>{try{dl(JSON.stringify(D,null,2),"application/json",`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`);sD((p:any)=>({...p,lastBackup:new Date().toISOString().slice(0,10)}));}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
+  const exportData=()=>{try{dl(JSON.stringify(D,null,2),"application/json",`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`);sD((p:any)=>({...p,lastBackup:new Date().toISOString().slice(0,10)}));showToast("💾 バックアップを書き出しました");}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
   // 全期間の明細をExcelで開けるCSVに（BOM付きUTF-8）
   const exportCSV=()=>{try{
     const rows:string[][]=[["月","日付","種別","内容","カテゴリ","金額"]];
@@ -430,6 +433,7 @@ export default function Home() {
     });
     const csv="\uFEFF"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
     dl(csv,"text/csv;charset=utf-8",`kakeibo-${new Date().toISOString().slice(0,10)}.csv`);
+    showToast("📊 CSVを書き出しました");
   }catch(e:any){alert("CSV書き出しに失敗しました: "+e.message);}};
   const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
@@ -442,13 +446,15 @@ export default function Home() {
       const upd=(list:any[])=>(list||[]).map((x:any)=>kanaNorm(x.description||"")===key?{...x,category:val}:x);
       return {...p,rules:{...(p.rules||{}),[key]:val},months:{...p.months,[p.cur]:{...m,cardExp:upd(m.cardExp),manualExp:upd(m.manualExp)}}};
     });
-  },[]);
+    showToast(`🧠 「${(tx.description||"").slice(0,12)}」→ ${val} を学習しました`);
+  },[showToast]);
   // 取引の編集・削除（card/manual両対応）
   const openTx=(t:any)=>{sETx(t);sfTD(t.date||"");sfTN(t.description||"");sfTA(String(t.amount||""));sfTC(t.category||"その他");sShT(true);};
   const saveTx=()=>{
     if(!eTx) return; const amt=Number(fTA); if(!amt||amt<=0) return;
     const upd=(list:any[])=>(list||[]).map((x:any)=>x.id===eTx.id?{...x,date:fTD||x.date,description:fTN||x.description,amount:amt,category:fTC}:x);
     uM((m:any)=>eTx.source==="card"?{...m,cardExp:upd(m.cardExp)}:{...m,manualExp:upd(m.manualExp)});
+    showToast("✅ 取引を保存しました");
     sShT(false); sETx(null);
   };
   const delTx=(t:any)=>{
@@ -495,7 +501,8 @@ export default function Home() {
       const f=(list:any[])=>(list||[]).map((x:any)=>x.category==="その他"?{...x,category:autoCategory(x.description||"",p.rules)}:x);
       return {...p,months:{...p.months,[p.cur]:{...m,cardExp:f(m.cardExp),manualExp:f(m.manualExp)}}};
     });
-  },[]);
+    showToast("🪄 「その他」を再仕分けしました");
+  },[showToast]);
 
   if(!rdy) return <div style={{minHeight:"100vh",background:"#0b0b1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#888"}}>読み込み中...</div>;
   const ac:any = {good:"#2ECC71",danger:"#E74C3C",warn:"#F39C12",info:"#bbb"};
@@ -580,6 +587,11 @@ export default function Home() {
         {pg==="statement"&&(<div>
           <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 2px",color:"#eee"}}>📑 マイ決算書</h2>
           <p style={{fontSize:10,color:"#666",margin:"0 0 14px"}}>あなた専用の損益計算書(P/L)と貸借対照表(B/S)</p>
+          {tE===0&&tI===0&&<div style={cs({textAlign:"center",padding:"20px 16px"})}>
+            <div style={{fontSize:26,marginBottom:6}}>📭</div>
+            <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px"}}>{cm} はまだデータがありません。<br/>明細を取り込むと決算書が自動で作られます。</p>
+            <button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 20px",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>💳 明細を取り込む</button>
+          </div>}
 
           {/* ── 損益計算書 P/L ── */}
           <div style={cs()}>
@@ -799,6 +811,9 @@ export default function Home() {
         </div>)}
       </div>
 
+      {/* Toast */}
+      {toast&&<div style={{position:"fixed",bottom:76,left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"9px 18px",borderRadius:999,fontSize:12,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",whiteSpace:"nowrap",maxWidth:"90vw",overflow:"hidden",textOverflow:"ellipsis"}}>{toast}</div>}
+
       {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f0f22",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",paddingBottom:"env(safe-area-inset-bottom,0px)",zIndex:50}}>
         <div style={{display:"flex",maxWidth:480,width:"100%"}}>{[{id:"home",ic:"🏠",l:"ホーム"},{id:"statement",ic:"📑",l:"決算書"},{id:"assets",ic:"💎",l:"資産"},{id:"list",ic:"📋",l:"明細"},{id:"more",ic:"⚙️",l:"設定"}].map(n=><button key={n.id} onClick={()=>{sPg(n.id);sEI(null);}} style={{flex:1,background:"none",border:"none",padding:"8px 0 6px",cursor:"pointer",color:pg===n.id?"#FF6B6B":"#666",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:17}}>{n.ic}</span><span style={{fontSize:8,fontWeight:pg===n.id?600:400}}>{n.l}</span></button>)}</div>
@@ -807,7 +822,17 @@ export default function Home() {
       {/* Modals */}
       <BS open={shI} onClose={()=>sShI(false)} title="💼 収入を追加"><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>追加</button></BS>
 
-      <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加"><FI label="カテゴリ" type="select" value={fEC} onChange={sfEC}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</FI><FI label="金額" type="amount" value={fEA} onChange={sfEA}/><FI label="日付" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/><button onClick={addE} style={B1}>追加</button></BS>
+      <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加">
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>カテゴリ</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,maxHeight:150,overflow:"auto"}}>
+            {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"6px 10px",borderRadius:999,fontSize:10,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(fEC===c?v.c+"66":"#333"),color:fEC===c?v.c:"#aaa",fontWeight:fEC===c?700:400}}>{v.i}{c}</button>)}
+          </div>
+        </div>
+        <FI label="金額" type="amount" value={fEA} onChange={sfEA}/><FI label="日付（空欄で今日）" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/>
+        <button onClick={addE} style={B1}>追加（連続入力OK）</button>
+        <button onClick={()=>sShE(false)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#999",padding:"9px 0",borderRadius:10,fontSize:12,cursor:"pointer",width:"100%",marginTop:8}}>閉じる</button>
+      </BS>
 
       <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
         <p style={{fontSize:12,color:"#bbb",margin:"0 0 8px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。今表示中の月「{cm}」に追加されます。</p>
