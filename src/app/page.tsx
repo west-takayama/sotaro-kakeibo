@@ -3,8 +3,9 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 
 // ═══ Storage ═══
-function LD() { try { const s = localStorage.getItem("kakeibo-v4"); return s ? JSON.parse(s) : null; } catch { return null; } }
-function SV(d: any) { try { localStorage.setItem("kakeibo-v4", JSON.stringify(d)); } catch {} }
+// v5: デモデータ入りのv4を破棄して全ユーザーまっさらな状態から開始
+function LD() { try { const s = localStorage.getItem("kakeibo-v5"); return s ? JSON.parse(s) : null; } catch { return null; } }
+function SV(d: any) { try { localStorage.setItem("kakeibo-v5", JSON.stringify(d)); } catch {} }
 
 // ═══ Categories ═══
 const EC: Record<string, { i: string; c: string; t: string }> = {
@@ -17,6 +18,7 @@ const EC: Record<string, { i: string; c: string; t: string }> = {
   "水・飲料":{i:"💧",c:"#5DADE2",t:"f"},"美容・衣服":{i:"👔",c:"#E6A8D7",t:"v"},
   "家電":{i:"🖥️",c:"#F1C40F",t:"v"},"医療費":{i:"🏥",c:"#87CEEB",t:"v"},
   "娯楽":{i:"🎮",c:"#FFB347",t:"v"},"税金・公的":{i:"🏛️",c:"#D2B48C",t:"f"},
+  "投資・貯蓄":{i:"📈",c:"#27AE60",t:"v"},
   "現金支出":{i:"💴",c:"#A3BE8C",t:"v"},"その他":{i:"📦",c:"#95A5A6",t:"v"},
 };
 const IT = [
@@ -45,27 +47,46 @@ const KN_S = "ァィゥェォッャュョヮ", KN_B = "アイウエオツヤユ�
 function kanaNorm(s: string): string {
   let r = s.normalize("NFKC");
   for (let i = 0; i < KN_S.length; i++) r = r.split(KN_S[i]).join(KN_B[i]);
+  // 長音「ー」とハイフン類は表記ゆれが激しいので除去して照合（例: サ-バ- ↔ サーバー）
+  r = r.replace(/[ーｰ‐−–—-]/g, "");
   return r.toLowerCase();
 }
-function autoCategory(desc: string): string {
+// カテゴリごとのキーワード辞書（上から順に判定。specificなものを先に）
+const CAT_KW: [string, string[]][] = [
+  ["水・飲料", ["プレミアムウォーター","水道","スイドウ","ウォーターサーバー","クリクラ","アクアクララ"]],
+  ["光熱費", ["楽天ガス","楽天でんき","でんき","東京電力","東京ガス","大阪ガス","東邦ガス","西部ガス","関西電力","中部電力","九州電力","東北電力","北海道電力","電気料","ガス料","エナジー","電力"]],
+  ["通信費", ["ソフトバンク","楽天モバイル","ドコモ","DOCOMO","KDDI","ワイモバイル","YMOBILE","UQモバイル","AHAMO","POVO","LINEMO","ブロードバンド","OCN","ビッグローブ","BIGLOBE","NURO","インターネット","通信料","通信"]],
+  ["サブスク", ["APPLE COM BILL","GOOGLE","Netflix","Spotify","YOUTUBE","HULU","DISNEY","DAZN","U-NEXT","ABEMA","KINDLE","AUDIBLE","ICLOUD","DROPBOX","MICROSOFT","ADOBE","CANVA","NOTION","ZOOM","GITHUB","OPENAI","CHATGPT","CLAUDE","SUBSCRIPTI","MONESTA","アマゾンプライム","AMAZON PRIME","PRIME VIDEO","エックスサーバー","XSERVER","サーバー","ドメイン","さくらインターネット","RIVERSIDE"]],
+  ["保険", ["プルデンシャル","生命保険","損保","あいおい","東京海上","アフラック","メットライフ","県民共済","都民共済","ソニー損保","セイメイホケン"]],
+  ["税金・公的", ["国税","都税","県税","市税","市役所","区役所","国民健康保険","国保","国民年金","NHK","年金機構"]],
+  ["投資・貯蓄", ["証券","投信","積立","つみたて","IDECO","NISA","ウェルスナビ","WEALTHNAVI","楽天キャッシュ","ビットフライヤー","BITFLYER","コインチェック","COINCHECK"]],
+  ["健康", ["フィットネス","FIT365","ジム","スポーツクラブ","エニタイム","ゴールドジム","カーブス","ヨガ","ピラティス"]],
+  ["教育・自己投資", ["動画編集","ドウガヘンシユウ","UDEMY","セミナー","スクール","講座","資格","英会話","スタディ","書店","ブックオフ","紀伊國屋","ジュンク","有隣堂","丸善"]],
+  ["食費（コンビニ）", ["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ","ミニストップ","ニューデイズ","NEWDAYS","セイコーマート","ポプラ","ヤマザキショップ"]],
+  ["食費（自炊）", ["いなげや","イナゲヤ","マルエツ","サミット","ヤオコー","オーケーストア","西友","イトーヨーカドー","ヨーカドー","ベイシア","業務スーパー","ロピア","コープ","まいばすけっと","マミーマート","マックスバリュ","イオンスタイル","ベルク","カスミ","トップバルー","肉のハナマサ","スーパー"]],
+  ["食費（外食）", ["すき家","吉野家","松屋","マクドナルド","スターバックス","ドトール","タリーズ","コメダ","丸亀製麺","はなまる","ココイチ","COCO壱","大戸屋","やよい軒","ガスト","サイゼリヤ","バーミヤン","ジョナサン","デニーズ","ロイヤルホスト","王将","日高屋","富士そば","ゆで太郎","くら寿司","スシロー","はま寿司","銀のさら","モスバーガー","バーガー","ケンタ","ピザ","ドミノ","ウーバー","UBER","出前館","ロケットナウ","カフェ","珈琲","喫茶","レストラン","食堂","キッチン","ダイニング","居酒屋","焼肉","焼鳥","ホルモン","ラーメン","うどん","寿司","ビストロ"]],
+  ["交通・車", ["SUICA","PASMO","モバイルスイカ","エネオス","ガソリン","ETC","高速道路","NEXCO","首都高","タイムズ","パーク24","リパーク","ナビパーク","コインパ","駐車","JR","メトロ","都営","小田急","京王","東急","西武","東武","京急","京成","相鉄","モノレール","タクシー","GO ","バス","洗車","オートバックス","イエローハット","車検","タイヤ","レンタカー","カーシェア"]],
+  ["家電", ["ビックカメラ","ヨドバシ","エディオン","ヤマダ電機","ケーズデンキ","ジョーシン","ノジマ","ソフマップ"]],
+  ["美容・衣服", ["ルミネ","ユニクロ","UNIQLO","GU","ZARA","しまむら","ABCマート","伊勢丹","高島屋","タカシマヤ","マルイ","パルコ","美容院","美容室","理容","ヘアサロン","ネイル","QBハウス","エステ"]],
+  ["日用品", ["ウエルパ","ドラッグ","クリエイト","マツモトキヨシ","マツキヨ","ウェルシア","スギ薬局","ツルハ","サンドラッグ","ココカラ","ドンキ","ドン・キホーテ","メガドンキ","ニトリ","無印","ダイソー","セリア","キャンドゥ","スリーコインズ","カインズ","コーナン","ビバホーム","DCM","ホームセンター","ハンズ","ロフト","アマゾン","AMAZON","イオンモール","ららぽーと","アリオ"]],
+  ["医療費", ["病院","クリニック","歯科","調剤","内科","外科","皮膚科","眼科","耳鼻","整形外科","整骨院","接骨院","鍼灸","薬局"]],
+  ["娯楽", ["ラウンドワン","カラオケ","ビッグエコー","映画","シネマ","TOHO","ゴルフ","ボウリング","温泉","スパ","プレイステーション","PLAYSTATION","NINTENDO","任天堂","STEAM","チケット","遊園地","水族館","動物園","ペイパービュー","レミノ"]],
+  ["家賃・住居", ["家賃","賃貸","不動産"]],
+];
+function autoCategory(desc: string, rules?: Record<string, string>): string {
   const d = kanaNorm(desc);
-  const m = (k: string[]) => k.some(x => d.includes(kanaNorm(x)));
-  if (m(["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ","ミニストップ","ニューデイズ"])) return "食費（コンビニ）";
-  if (m(["すき家","吉野家","松屋","マクドナルド","スターバックス","カフェ","レストラン","ケンタ","モスバーガー","ガスト","サイゼリヤ","スシロー","ペイパービュー"])) return "食費（外食）";
-  if (m(["楽天ガス","楽天でんき","東京電力","電気","ガス","エナジー","電力","でんき"])) return "光熱費";
-  if (m(["ソフトバンク","楽天モバイル","ドコモ","ブロードバンド","通信料","通信","au","povo"])) return "通信費";
-  if (m(["APPLE COM BILL","Netflix","Spotify","MONESTA","CLAUDE","SUBSCRIPTI","OPENAI","ChatGPT","Amazonプライム","Youtube","Adobe"])) return "サブスク";
-  if (m(["プルデンシャル","生命保険","損保","あいおい","東京海上"])) return "保険";
-  if (m(["Suica","PASMO","エネオス","ガソリン","ETC","JR","タクシー","駐車"])) return "交通・車";
-  if (m(["フィットネス","FIT365","ジム","スポーツクラブ"])) return "健康";
-  if (m(["動画編集","Udemy","セミナー","スクール","講座"])) return "教育・自己投資";
-  if (m(["プレミアムウォーター","水道","スイドウ"])) return "水・飲料";
-  if (m(["ルミネ","ユニクロ","美容院","高島屋","ZARA","GU","伊勢丹"])) return "美容・衣服";
-  if (m(["ビックカメラ","ヨドバシ","エディオン","ヤマダ電機"])) return "家電";
-  if (m(["ウエルパ","ドラッグ","クリエイト","マツモトキヨシ","ウェルシア","スギ薬局"])) return "日用品";
+  // ① 学習済みルール（ユーザーが手で直した店名）を最優先
+  if (rules) {
+    if (rules[d]) return rules[d];
+    for (const k in rules) { if (k && (d.includes(k) || k.includes(d))) return rules[k]; }
+  }
+  // ② キーワード辞書
+  for (const [cat, kws] of CAT_KW) {
+    if (kws.some(x => d.includes(kanaNorm(x)))) return cat;
+  }
   return "その他";
 }
-function parseCSV(text: string): any[] {
+function parseCSV(text: string, rules?: Record<string, string>): any[] {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const txns: any[] = [];
   for (const line of lines) {
@@ -88,7 +109,7 @@ function parseCSV(text: string): any[] {
         if (/^-?\d+$/.test(c) && Math.abs(parseInt(c))===amount) continue;
         if (f.length > desc.length) desc = f;
       }
-      txns.push({ id: Date.now()+Math.random()*1e4, date: date.length>5?date.slice(5):date, description: desc||"不明", amount, category: autoCategory(desc), source:"card" });
+      txns.push({ id: Date.now()+Math.random()*1e4, date: date.length>5?date.slice(5):date, description: desc||"不明", amount, category: autoCategory(desc, rules), source:"card" });
     }
   }
   return txns;
@@ -127,7 +148,7 @@ async function extractPdfText(file: File): Promise<string> {
 }
 
 // ═══ カード明細PDFの行を解析（日付 店名 利用者 支払方法 利用金額 …の表形式に対応）═══
-function parsePdfStatement(text: string): any[] {
+function parsePdfStatement(text: string, rules?: Record<string, string>): any[] {
   const txns: any[] = [];
   const dateRe = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
   for (const raw of text.split("\n")) {
@@ -145,41 +166,14 @@ function parsePdfStatement(text: string): any[] {
     if (!amount) continue;
     const store = (toks.slice(1, Math.max(2, payIdx - 1)).join(" ") || toks[1]).normalize("NFKC");
     const date = dm[2].padStart(2, "0") + "/" + dm[3].padStart(2, "0");
-    txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store), source: "card" });
+    txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store, rules), source: "card" });
   }
   return txns;
 }
 
-// ═══ Default card data ═══
-const CARD = [
-  {d:"02/28",n:"Suica（携帯決済）",a:1000,cat:"交通・車"},{d:"02/27",n:"セブン-イレブン",a:409,cat:"食費（コンビニ）"},
-  {d:"02/25",n:"楽天ペイ",a:1100,cat:"その他"},{d:"02/24",n:"ファミリーマート",a:270,cat:"食費（コンビニ）"},
-  {d:"02/24",n:"ファミリーマート",a:257,cat:"食費（コンビニ）"},{d:"02/23",n:"ロケットナウ",a:2220,cat:"日用品"},
-  {d:"02/23",n:"楽天ガス",a:13040,cat:"光熱費"},{d:"02/22",n:"アイハーブ",a:6411,cat:"日用品"},
-  {d:"02/22",n:"グリーンスプリングス",a:300,cat:"食費（外食）"},{d:"02/22",n:"ローソン",a:214,cat:"食費（コンビニ）"},
-  {d:"02/22",n:"GREENSPRINGS",a:4324,cat:"食費（外食）"},{d:"02/20",n:"プレミアムウォーター",a:4082,cat:"水・飲料"},
-  {d:"02/20",n:"ウエルパーク",a:2838,cat:"日用品"},{d:"02/19",n:"プルデンシャル生命保険",a:3145,cat:"保険"},
-  {d:"02/19",n:"デイリーヤマザキ",a:621,cat:"食費（コンビニ）"},{d:"02/19",n:"ファミリーマート",a:150,cat:"食費（コンビニ）"},
-  {d:"02/19",n:"ローソン",a:257,cat:"食費（コンビニ）"},{d:"02/18",n:"セブン-イレブン",a:140,cat:"食費（コンビニ）"},
-  {d:"02/17",n:"ファミリーマート",a:150,cat:"食費（コンビニ）"},{d:"02/17",n:"ファミリーマート",a:160,cat:"食費（コンビニ）"},
-  {d:"02/17",n:"エネオス SS",a:29,cat:"交通・車"},{d:"02/16",n:"セブン-イレブン",a:709,cat:"食費（コンビニ）"},
-  {d:"02/16",n:"ファミリーマート",a:467,cat:"食費（コンビニ）"},{d:"02/15",n:"ソフトバンク",a:2925,cat:"通信費"},
-  {d:"02/15",n:"ルミネ立川",a:5960,cat:"美容・衣服"},{d:"02/15",n:"ららぽーと立川",a:14981,cat:"日用品"},
-  {d:"02/14",n:"動画編集講座",a:15000,cat:"教育・自己投資"},{d:"02/14",n:"セブン-イレブン",a:333,cat:"食費（コンビニ）"},
-  {d:"02/14",n:"セブン-イレブン",a:140,cat:"食費（コンビニ）"},{d:"02/13",n:"APPLE COM BILL",a:1200,cat:"サブスク"},
-  {d:"02/13",n:"すき家",a:450,cat:"食費（外食）"},{d:"02/12",n:"ファミリーマート",a:172,cat:"食費（コンビニ）"},
-  {d:"02/11",n:"楽天モバイル",a:4403,cat:"通信費"},{d:"02/11",n:"ローソン",a:152,cat:"食費（コンビニ）"},
-  {d:"02/11",n:"セブン-イレブン",a:1149,cat:"食費（コンビニ）"},{d:"02/11",n:"MONESTA",a:508,cat:"サブスク"},
-  {d:"02/09",n:"FIT365 会費",a:1100,cat:"健康"},{d:"02/09",n:"セブン-イレブン",a:248,cat:"食費（コンビニ）"},
-  {d:"02/09",n:"セブン-イレブン",a:270,cat:"食費（コンビニ）"},{d:"02/08",n:"楽天でんき",a:12370,cat:"光熱費"},
-  {d:"02/07",n:"ビックカメラ",a:15361,cat:"家電"},{d:"02/07",n:"ルミネ立川",a:5405,cat:"美容・衣服"},
-  {d:"02/07",n:"伊勢丹 立川",a:13824,cat:"日用品"},{d:"02/07",n:"ビックカメラ",a:110,cat:"家電"},
-  {d:"02/07",n:"セブン-イレブン",a:140,cat:"食費（コンビニ）"},{d:"02/04",n:"楽天ブロードバンド",a:4180,cat:"通信費"},
-  {d:"02/03",n:"プレミアムウォーター",a:4082,cat:"水・飲料"},{d:"02/03",n:"プレミアムウォーター",a:220,cat:"水・飲料"},
-  {d:"02/01",n:"APPLE COM BILL",a:2900,cat:"サブスク"},{d:"01/28",n:"インフォマート",a:1481,cat:"日用品"},
-].map((t,i) => ({id:1e3+i,date:t.d,description:t.n,amount:t.a,category:t.cat,source:"card"}));
-
-const DEF = { months:{"2026-03":{incomes:[] as any[],manualExp:[] as any[],cardExp:CARD}}, cur:"2026-03", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""} };
+// ═══ 初期状態（デモデータなし・まっさらな状態から開始）═══
+const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string> };
+const freshState = () => { const m = new Date().toISOString().slice(0,7); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
 
 // ═══ Advice ═══
 function genAdvice(tI:number, tE:number, bC:any) {
@@ -249,7 +243,7 @@ export default function Home() {
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
 
-  useEffect(()=>{const s=LD();if(s?.months) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[]}); sRdy(true);},[]);
+  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
@@ -285,8 +279,8 @@ export default function Home() {
     try {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
       const text = isPdf ? await extractPdfText(file) : await file.text();
-      let txns = isPdf ? parsePdfStatement(text) : parseCSV(text);
-      if (txns.length === 0) txns = parseCSV(text); // 念のためCSV方式でも再解析
+      let txns = isPdf ? parsePdfStatement(text, D.rules) : parseCSV(text, D.rules);
+      if (txns.length === 0) txns = parseCSV(text, D.rules); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
         sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
       } else {
@@ -302,9 +296,27 @@ export default function Home() {
   };
 
   const exportData=()=>{try{const blob=new Blob([JSON.stringify(D,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
-  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
+  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
-  const hCC=useCallback((idx:number,val:string)=>{const cl=md.cardExp?.length||0;if(idx<cl)uM((m:any)=>({...m,cardExp:m.cardExp.map((t:any,i:number)=>i===idx?{...t,category:val}:t)}));else uM((m:any)=>({...m,manualExp:m.manualExp.map((t:any,i:number)=>i===(idx-cl)?{...t,category:val}:t)}));},[md.cardExp?.length,cm]);
+  // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
+  const hCC=useCallback((idx:number,val:string)=>{
+    const t=allE[idx]; if(!t) return;
+    const key=kanaNorm(t.description||"");
+    sD((p:any)=>{
+      const m=p.months[p.cur]||{incomes:[],manualExp:[],cardExp:[]};
+      const upd=(list:any[])=>(list||[]).map((x:any)=>kanaNorm(x.description||"")===key?{...x,category:val}:x);
+      return {...p,rules:{...(p.rules||{}),[key]:val},months:{...p.months,[p.cur]:{...m,cardExp:upd(m.cardExp),manualExp:upd(m.manualExp)}}};
+    });
+  },[allE]);
+
+  // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
+  const reCat=useCallback(()=>{
+    sD((p:any)=>{
+      const m=p.months[p.cur]; if(!m) return p;
+      const f=(list:any[])=>(list||[]).map((x:any)=>x.category==="その他"?{...x,category:autoCategory(x.description||"",p.rules)}:x);
+      return {...p,months:{...p.months,[p.cur]:{...m,cardExp:f(m.cardExp),manualExp:f(m.manualExp)}}};
+    });
+  },[]);
 
   if(!rdy) return <div style={{minHeight:"100vh",background:"#0b0b1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#888"}}>読み込み中...</div>;
   const ac:any = {good:"#2ECC71",danger:"#E74C3C",warn:"#F39C12",info:"#bbb"};
@@ -430,8 +442,11 @@ export default function Home() {
         </div>)}
 
         {pg==="list"&&(<div>
-          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 4px",color:"#eee"}}>📋 明細 ({cm})</h2>
-          <p style={{fontSize:9,color:"#666",margin:"0 0 10px"}}>💳{md.cardExp?.length||0} + ✏️{md.manualExp?.length||0} = {allE.length}件</p>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 4px"}}>
+            <h2 style={{fontSize:16,fontWeight:700,margin:0,color:"#eee"}}>📋 明細 ({cm})</h2>
+            {allE.some((t:any)=>t.category==="その他")&&<button onClick={reCat} style={{background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.25)",color:"#9B59B6",padding:"4px 10px",borderRadius:6,fontSize:10,cursor:"pointer",fontWeight:600}}>🪄 その他を再仕分け</button>}
+          </div>
+          <p style={{fontSize:9,color:"#666",margin:"0 0 10px"}}>💳{md.cardExp?.length||0} + ✏️{md.manualExp?.length||0} = {allE.length}件 ・ カテゴリをタップで変更→同じ店は次回から自動仕分け</p>
           <div style={cs()}>{allE.map((t:any,i:number)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};return(
             <div key={t.id||i} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
               <span style={{flex:"0 0 34px",color:"#666",fontFamily:"monospace",fontSize:9}}>{t.date}</span>
@@ -453,7 +468,7 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>}</span><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div></div>
-          <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(DEF);}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
+          <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(freshState());}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
         </div>)}
       </div>
 
