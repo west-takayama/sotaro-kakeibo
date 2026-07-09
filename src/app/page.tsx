@@ -276,6 +276,9 @@ export default function Home() {
   const [shG,sShG]=useState(false); const [shM,sShM]=useState(false); const [shIn,sShIn]=useState(false);
   const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null);
   const [shB,sShB]=useState(false); const [fBT,sfBT]=useState(""); const [fBC,sfBC]=useState<Record<string,string>>({});
+  const [q,sQ]=useState(""); const [fCat,sFCat]=useState(""); const [sortBy,sSortBy]=useState<"date"|"amount">("date");
+  const [shT,sShT]=useState(false); const [eTx,sETx]=useState<any>(null);
+  const [fTD,sfTD]=useState(""); const [fTN,sfTN]=useState(""); const [fTA,sfTA]=useState(""); const [fTC,sfTC]=useState("その他");
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false);
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
@@ -286,6 +289,7 @@ export default function Home() {
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
+  useEffect(()=>{sQ("");sFCat("");sEI(null);},[cm]); // 月を切り替えたら絞り込みをリセット
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
   const allE=useMemo(()=>[...(md.cardExp||[]),...(md.manualExp||[])],[md]);
@@ -393,15 +397,40 @@ export default function Home() {
   const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
   // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
-  const hCC=useCallback((idx:number,val:string)=>{
-    const t=allE[idx]; if(!t) return;
-    const key=kanaNorm(t.description||"");
+  const hCC=useCallback((tx:any,val:string)=>{
+    if(!tx) return;
+    const key=kanaNorm(tx.description||"");
     sD((p:any)=>{
       const m=p.months[p.cur]||{incomes:[],manualExp:[],cardExp:[]};
       const upd=(list:any[])=>(list||[]).map((x:any)=>kanaNorm(x.description||"")===key?{...x,category:val}:x);
       return {...p,rules:{...(p.rules||{}),[key]:val},months:{...p.months,[p.cur]:{...m,cardExp:upd(m.cardExp),manualExp:upd(m.manualExp)}}};
     });
-  },[allE]);
+  },[]);
+  // 取引の編集・削除（card/manual両対応）
+  const openTx=(t:any)=>{sETx(t);sfTD(t.date||"");sfTN(t.description||"");sfTA(String(t.amount||""));sfTC(t.category||"その他");sShT(true);};
+  const saveTx=()=>{
+    if(!eTx) return; const amt=Number(fTA); if(!amt||amt<=0) return;
+    const upd=(list:any[])=>(list||[]).map((x:any)=>x.id===eTx.id?{...x,date:fTD||x.date,description:fTN||x.description,amount:amt,category:fTC}:x);
+    uM((m:any)=>eTx.source==="card"?{...m,cardExp:upd(m.cardExp)}:{...m,manualExp:upd(m.manualExp)});
+    sShT(false); sETx(null);
+  };
+  const delTx=(t:any)=>{
+    if(!t) return;
+    if(!confirm(`「${t.description}」¥${t.amount.toLocaleString()} を削除しますか？`)) return;
+    uM((m:any)=>t.source==="card"?{...m,cardExp:(m.cardExp||[]).filter((x:any)=>x.id!==t.id)}:{...m,manualExp:(m.manualExp||[]).filter((x:any)=>x.id!==t.id)});
+    sShT(false); sETx(null);
+  };
+  // 検索・絞り込み・並び替え後の明細ビュー
+  const listView=useMemo(()=>{
+    let l=allE as any[];
+    if(q){const k=kanaNorm(q);l=l.filter((t:any)=>kanaNorm(t.description||"").includes(k));}
+    if(fCat)l=l.filter((t:any)=>t.category===fCat);
+    l=[...l];
+    if(sortBy==="amount")l.sort((a,b)=>b.amount-a.amount);
+    else l.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    return l;
+  },[allE,q,fCat,sortBy]);
+  const listSum=useMemo(()=>listView.reduce((s:number,t:any)=>s+t.amount,0),[listView]);
 
   // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
   const reCat=useCallback(()=>{
@@ -585,17 +614,49 @@ export default function Home() {
             <h2 style={{fontSize:16,fontWeight:700,margin:0,color:"#eee"}}>📋 明細 ({cm})</h2>
             {allE.some((t:any)=>t.category==="その他")&&<button onClick={reCat} style={{background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.25)",color:"#9B59B6",padding:"4px 10px",borderRadius:6,fontSize:10,cursor:"pointer",fontWeight:600}}>🪄 その他を再仕分け</button>}
           </div>
-          <p style={{fontSize:9,color:"#666",margin:"0 0 10px"}}>💳{md.cardExp?.length||0} + ✏️{md.manualExp?.length||0} = {allE.length}件 ・ カテゴリをタップで変更→同じ店は次回から自動仕分け</p>
-          <div style={cs()}>{allE.map((t:any,i:number)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};return(
-            <div key={t.id||i} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
+          <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>内容タップで編集 ・ カテゴリタップで変更（同じ店は次回から自動仕分け）</p>
+          {/* 収入セクション */}
+          <div style={cs({padding:"10px 14px"})}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{fontSize:11,fontWeight:600,margin:0,color:"#2ECC71"}}>💼 収入 <span style={{fontFamily:"monospace"}}>¥{tI.toLocaleString()}</span></h3>
+              <button onClick={()=>sShI(true)} style={{background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"3px 10px",borderRadius:5,fontSize:10,cursor:"pointer",fontWeight:600}}>＋追加</button>
+            </div>
+            {md.incomes.length>0&&<div style={{marginTop:6}}>{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(
+              <div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",fontSize:11}}>
+                <span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666",fontSize:9}}>({inc.note})</span>}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
+              </div>);})}</div>}
+          </div>
+          {/* 検索・並び替え */}
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            <div style={{position:"relative",flex:1}}>
+              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#666"}}>🔍</span>
+              <input value={q} onChange={(e:any)=>sQ(e.target.value)} placeholder="店名で検索"
+                style={{width:"100%",boxSizing:"border-box",padding:"8px 10px 8px 30px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:12,outline:"none"}}/>
+              {q&&<button onClick={()=>sQ("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#777",cursor:"pointer",fontSize:12}}>×</button>}
+            </div>
+            <button onClick={()=>sSortBy(s=>s==="date"?"amount":"date")} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#aaa",padding:"0 12px",borderRadius:10,fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>{sortBy==="date"?"📅 日付順":"💰 金額順"}</button>
+          </div>
+          {/* カテゴリ絞り込みチップ */}
+          {srt.length>1&&<div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,marginBottom:6,WebkitOverflowScrolling:"touch"}}>
+            <button onClick={()=>sFCat("")} style={{flexShrink:0,padding:"4px 10px",borderRadius:999,fontSize:10,cursor:"pointer",background:!fCat?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(!fCat?"rgba(255,107,107,0.35)":"#333"),color:!fCat?"#FF6B6B":"#999",fontWeight:600}}>全て</button>
+            {srt.map(([c]:any)=>{const cfg=EC[c]||{i:"📦",c:"#888"};const on=fCat===c;return(
+              <button key={c} onClick={()=>sFCat(on?"":c)} style={{flexShrink:0,padding:"4px 10px",borderRadius:999,fontSize:10,cursor:"pointer",background:on?cfg.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(on?cfg.c+"66":"#333"),color:on?cfg.c:"#999",fontWeight:600,whiteSpace:"nowrap"}}>{cfg.i}{c}</button>);})}
+          </div>}
+          <p style={{fontSize:10,color:"#888",margin:"0 0 8px"}}>{(q||fCat)?`絞り込み結果: ${listView.length}件 ・ 合計 `:`💳${md.cardExp?.length||0} + ✏️${md.manualExp?.length||0} = ${allE.length}件 ・ 支出合計 `}<span style={{fontFamily:"monospace",color:"#FF6B6B",fontWeight:700}}>¥{listSum.toLocaleString()}</span></p>
+          <div style={cs()}>
+            {listView.length===0&&<p style={{fontSize:11,color:"#666",margin:0,textAlign:"center",padding:"12px 0"}}>{allE.length===0?"取引がありません。「明細取込」や「支出」から追加できます。":"条件に合う取引がありません。"}</p>}
+            {listView.map((t:any)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};return(
+            <div key={t.id} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
               <span style={{flex:"0 0 34px",color:"#666",fontFamily:"monospace",fontSize:9}}>{t.date}</span>
               <span style={{fontSize:10}}>{t.source==="card"?"💳":"✏️"}</span>
-              <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#ddd",minWidth:0}}>{t.description}</span>
-              <span style={{fontFamily:"monospace",color:"#ddd",fontSize:10}}>¥{t.amount.toLocaleString()}</span>
-              {eI===i?<select value={t.category} onChange={(e:any)=>{hCC(i,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
-              :<span onClick={()=>sEI(i)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
-              {t.source==="manual"&&<button onClick={()=>uM((m:any)=>({...m,manualExp:m.manualExp.filter((e:any)=>e.id!==t.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button>}
-            </div>);})}</div>
+              <span onClick={()=>openTx(t)} style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#ddd",minWidth:0,cursor:"pointer"}}>{t.description}</span>
+              <span onClick={()=>openTx(t)} style={{fontFamily:"monospace",color:"#ddd",fontSize:10,cursor:"pointer"}}>¥{t.amount.toLocaleString()}</span>
+              {eI===t.id?<select value={t.category} onChange={(e:any)=>{hCC(t,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
+              :<span onClick={()=>sEI(t.id)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
+              <button onClick={()=>delTx(t)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>
+            </div>);})}
+          </div>
         </div>)}
 
         {pg==="more"&&(<div>
@@ -634,6 +695,14 @@ export default function Home() {
 
       <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
       <BS open={shL} onClose={()=>sShL(false)} title={eLiId?"💳 負債を編集":"💳 負債を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eLiId?"金額・メモを変更できます。":"ローン残高やカード未払い分などを入力します。同じ種類は上書きされます。"}</p><FI label="種類" type="select" value={fLT} onChange={sfLT}>{LT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fLA} onChange={sfLA}/><FI label="メモ" value={fLN} onChange={sfLN} placeholder="例: 〇〇銀行 住宅ローン"/><button onClick={addLi} style={{...B1,background:"linear-gradient(135deg,#FF6B6B,#E74C3C)"}}>{eLiId?"保存":"追加"}</button></BS>
+      <BS open={shT} onClose={()=>{sShT(false);sETx(null);}} title="✏️ 取引を編集">
+        <FI label="日付" value={fTD} onChange={sfTD} placeholder="例: 07/15"/>
+        <FI label="内容（店名）" value={fTN} onChange={sfTN} placeholder="例: スーパー〇〇"/>
+        <FI label="金額" type="amount" value={fTA} onChange={sfTA}/>
+        <FI label="カテゴリ" type="select" value={fTC} onChange={sfTC}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</FI>
+        <button onClick={saveTx} style={B1}>保存</button>
+        <button onClick={()=>delTx(eTx)} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.25)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:12,cursor:"pointer",width:"100%",marginTop:8,fontWeight:600}}>🗑️ この取引を削除</button>
+      </BS>
       <BS open={shB} onClose={()=>sShB(false)} title="📏 月の予算を設定">
         <FI label="全体の月予算（空欄で未設定）" type="amount" value={fBT} onChange={sfBT} placeholder="例: 250000"/>
         <p style={{fontSize:10,color:"#888",margin:"0 0 8px"}}>カテゴリ別予算（任意）。金額を入れたものだけホームに表示されます。</p>
