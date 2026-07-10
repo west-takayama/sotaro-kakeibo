@@ -7,8 +7,8 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 function LD() { try { const s = localStorage.getItem("kakeibo-v5"); return s ? JSON.parse(s) : null; } catch { return null; } }
 function SV(d: any) { try { localStorage.setItem("kakeibo-v5", JSON.stringify(d)); } catch {} }
 
-// ═══ Categories ═══
-const EC: Record<string, { i: string; c: string; t: string }> = {
+// ═══ Categories（組み込み。ユーザー定義・上書きは D.cats とマージして使う）═══
+const ECB: Record<string, { i: string; c: string; t: string }> = {
   "食費（コンビニ）":{i:"🏪",c:"#FF6B6B",t:"v"},"食費（外食）":{i:"🍽️",c:"#E74C3C",t:"v"},
   "食費（自炊）":{i:"🥗",c:"#E95E4E",t:"v"},"日用品":{i:"🛍️",c:"#F39C12",t:"v"},
   "光熱費":{i:"💡",c:"#2ECC71",t:"f"},"通信費":{i:"📱",c:"#3498DB",t:"f"},
@@ -172,7 +172,7 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
 }
 
 // ═══ 初期状態（デモデータなし・まっさらな状態から開始）═══
-const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>} };
+const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
 const freshState = () => { const m = new Date().toISOString().slice(0,7); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
 
 // ═══ スマートコメント（端末内で完結・API不要）═══
@@ -230,9 +230,25 @@ function genAdvice(tI:number, tE:number, bC:any, x:any={}) {
   if (x.histUp > 0) t.push({ty:"good",i:"🚀",tx:`純資産が前回更新から＋¥${x.histUp.toLocaleString()}。確実に前進しています！`});
   if (x.nwTgt > 0 && x.netW < x.nwTgt) t.push({ty:"info",i:"🎯",tx:`目標純資産まであと¥${(x.nwTgt - x.netW).toLocaleString()}（達成率${x.nwP.toFixed(0)}%）。`});
   else if (x.nwTgt > 0) t.push({ty:"good",i:"👑",tx:"目標純資産を達成！おめでとうございます。次の目標を設定しましょう。"});
-  // ⑦ データ保護の案内
+  // ⑦ 曜日の傾向
+  if (x.weekendShare != null && tE > 20000 && x.weekendShare >= 0.55) t.push({ty:"info",i:"🛍",tx:`支出の${Math.round(x.weekendShare*100)}%が週末に集中。お出かけ前に「今日の上限」を決めると効きます。`});
+  // ⑧ 予算の提案（未設定で先月データがあるとき）
+  if (!x.bud && x.prevTE > 0) t.push({ty:"info",i:"📏",tx:`先月の支出は¥${x.prevTE.toLocaleString()}。ホームから今月の予算を設定すると「あと使える額」が見えます。`});
+  // ⑨ データ保護の案内
   if (x.backup) t.push({ty:"info",i:"💾",tx:x.backup.days==null?"データはこの端末だけに保存されています。設定からバックアップを書き出しておくと安心です。":`最後のバックアップから${x.backup.days}日経過。設定から書き出しておきましょう。`});
   return t;
+}
+// 数字がヌルッと増えるカウントアップ（モチベーション演出・軽量）
+function useCountUp(v: number, dur = 550) {
+  const [x, sX] = useState(v); const pr = useRef(v);
+  useEffect(() => {
+    const from = pr.current, to = v; if (from === to) return; pr.current = to;
+    const t0 = performance.now(); let raf = 0;
+    const step = (t: number) => { const p = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - p, 3); sX(Math.round(from + (to - from) * e)); if (p < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [v, dur]);
+  return x;
 }
 
 // ═══ UI Parts ═══
@@ -283,6 +299,11 @@ export default function Home() {
   const [fTD,sfTD]=useState(""); const [fTN,sfTN]=useState(""); const [fTA,sfTA]=useState(""); const [fTC,sfTC]=useState("その他");
   const [toast,sToast]=useState<string|null>(null); const toastT=useRef<any>(null);
   const showToast=useCallback((msg:string)=>{sToast(msg);clearTimeout(toastT.current);toastT.current=setTimeout(()=>sToast(null),2200);},[]);
+  // 組み込みカテゴリ＋ユーザー定義/上書き（D.cats）をマージ。以降このECを参照する
+  const EC=useMemo(()=>{const m:Record<string,{i:string;c:string;t:string}>={...ECB};Object.entries((D as any).cats||{}).forEach(([k,v]:any)=>{m[k]={...(m[k]||{i:"🏷️",c:"#95A5A6",t:"v"}),...v};});return m;},[D]);
+  // カテゴリ管理モーダル
+  const [shCat,sShCat]=useState(false); const [eCat,sECat]=useState<string|null>(null);
+  const [fCN,sfCN]=useState(""); const [fCI,sfCI]=useState("🏷️"); const [fCCo,sfCCo]=useState("#4ECDC4"); const [fCT,sfCT]=useState("v");
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false);
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
@@ -291,7 +312,7 @@ export default function Home() {
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
 
-  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}}}); else sD(freshState()); sRdy(true);},[]);
+  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
@@ -358,12 +379,16 @@ export default function Home() {
       if(!(D as any).lastBackup) backup={days:null};
       else{const days=Math.floor((Date.now()-new Date((D as any).lastBackup).getTime())/86400000);if(days>=30)backup={days};}
     }
-    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,
+    // 週末にどれだけ使っているか
+    let weekendShare:number|null=null;
+    if(tE>0&&cm){const [yy,mo]=cm.split("-").map(Number);let wk=0;allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const day=new Date(yy,mo-1,parseInt(m[2],10)).getDay();if(day===0||day===6)wk+=t.amount;});weekendShare=wk/tE;}
+    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,weekendShare,
       bud:bud&&bud.total>0?{total:bud.total,spent:bud.spent,perDay:bud.perDay}:null,
       overCat:bud?.overCats?.[0]||null,
       upCat:ups.length&&ups[0][1]>=3000?[ups[0][0],ups[0][1]]:null,
       downCat:downs.length&&-downs[0][1]>=3000?[downs[0][0],-downs[0][1]]:null};
-  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud,D.months,D]);
+  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud,D.months,D,allE,tE,cm]);
+  const balA=useCountUp(bal); const netWA=useCountUp(netW);
   // 完全に空の状態か（初回ガイド表示用）
   const isEmpty=useMemo(()=>{
     const anyTx=Object.values(D.months).some((v:any)=>((v.cardExp||[]).length+(v.manualExp||[]).length+(v.incomes||[]).length)>0);
@@ -435,7 +460,7 @@ export default function Home() {
     dl(csv,"text/csv;charset=utf-8",`kakeibo-${new Date().toISOString().slice(0,10)}.csv`);
     showToast("📊 CSVを書き出しました");
   }catch(e:any){alert("CSV書き出しに失敗しました: "+e.message);}};
-  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
+  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}},cats:o.cats||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
   // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
   const hCC=useCallback((tx:any,val:string)=>{
@@ -462,6 +487,49 @@ export default function Home() {
     if(!confirm(`「${t.description}」¥${t.amount.toLocaleString()} を削除しますか？`)) return;
     uM((m:any)=>t.source==="card"?{...m,cardExp:(m.cardExp||[]).filter((x:any)=>x.id!==t.id)}:{...m,manualExp:(m.manualExp||[]).filter((x:any)=>x.id!==t.id)});
     sShT(false); sETx(null);
+  };
+  // ── カテゴリの作成・編集・削除（リネームは全データを移行）──
+  const openCat=(name?:string)=>{
+    if(name&&EC[name]){const c=EC[name];sECat(name);sfCN(name);sfCI(c.i);sfCCo(c.c);sfCT(c.t);}
+    else{sECat(null);sfCN("");sfCI("🏷️");sfCCo("#4ECDC4");sfCT("v");}
+    sShCat(true);
+  };
+  const saveCat=()=>{
+    const name=fCN.trim();
+    if(!name){alert("カテゴリ名を入力してください");return;}
+    const isBuiltin=eCat!=null&&(eCat in ECB);
+    const renamed=eCat!=null&&!isBuiltin&&name!==eCat;
+    if((eCat==null||renamed)&&EC[name]){alert("同じ名前のカテゴリがすでにあります");return;}
+    sD((p:any)=>{
+      let months=p.months,rules=p.rules||{},budget=p.budget||{total:0,cat:{}};
+      const cats={...(p.cats||{})};
+      if(renamed&&eCat){
+        months=Object.fromEntries(Object.entries(p.months).map(([k,v]:any)=>[k,{...v,
+          cardExp:(v.cardExp||[]).map((x:any)=>x.category===eCat?{...x,category:name}:x),
+          manualExp:(v.manualExp||[]).map((x:any)=>x.category===eCat?{...x,category:name}:x)}]));
+        rules=Object.fromEntries(Object.entries(rules).map(([k,v]:any)=>[k,v===eCat?name:v]));
+        if(budget.cat&&budget.cat[eCat]!=null){const bc={...budget.cat};bc[name]=bc[eCat];delete bc[eCat];budget={...budget,cat:bc};}
+        delete cats[eCat];
+      }
+      cats[isBuiltin?(eCat as string):name]={i:fCI||"🏷️",c:fCCo||"#4ECDC4",t:fCT};
+      return{...p,months,rules,budget,cats};
+    });
+    showToast(eCat?"✏️ カテゴリを更新しました":`🏷️ 「${name}」を追加しました`);
+    sShCat(false);sECat(null);
+  };
+  const delCat=(name:string)=>{
+    if(name in ECB){alert("標準カテゴリは削除できません（絵文字・色・固定/変動の変更は可能です）");return;}
+    if(!confirm(`「${name}」を削除しますか？このカテゴリの取引は「その他」に変わります。`))return;
+    sD((p:any)=>{
+      const cats={...(p.cats||{})};delete cats[name];
+      const months=Object.fromEntries(Object.entries(p.months).map(([k,v]:any)=>[k,{...v,
+        cardExp:(v.cardExp||[]).map((x:any)=>x.category===name?{...x,category:"その他"}:x),
+        manualExp:(v.manualExp||[]).map((x:any)=>x.category===name?{...x,category:"その他"}:x)}]));
+      const rules=Object.fromEntries(Object.entries(p.rules||{}).filter(([,v]:any)=>v!==name));
+      const bc={...(p.budget?.cat||{})};delete bc[name];
+      return{...p,cats,months,rules,budget:{...(p.budget||{total:0}),cat:bc}};
+    });
+    showToast(`🗑 「${name}」を削除しました`);
   };
   // 検索・絞り込み・並び替え後の明細ビュー
   const listView=useMemo(()=>{
@@ -529,7 +597,7 @@ export default function Home() {
           </div>}
           <div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.06),rgba(255,179,71,0.04))",borderColor:"rgba(255,107,107,0.12)",padding:16})}>
             <div style={{fontSize:10,color:"#999"}}>今月の収支</div>
-            <div style={{fontSize:26,fontWeight:800,fontFamily:"monospace",color:bal>=0?"#2ECC71":"#E74C3C",marginBottom:6}}>{bal>=0?"+":""}¥{bal.toLocaleString()}</div>
+            <div style={{fontSize:26,fontWeight:800,fontFamily:"monospace",color:bal>=0?"#2ECC71":"#E74C3C",marginBottom:6}}>{balA>=0?"+":"−"}¥{Math.abs(balA).toLocaleString()}</div>
             <div style={{display:"flex",gap:14,fontSize:11,flexWrap:"wrap"}}>
               <span><span style={{color:"#888"}}>収入 </span><span style={{color:"#2ECC71",fontFamily:"monospace",fontWeight:600}}>¥{tI.toLocaleString()}</span></span>
               <span><span style={{color:"#888"}}>支出 </span><span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{tE.toLocaleString()}</span></span>
@@ -567,7 +635,7 @@ export default function Home() {
           )}
           <div onClick={()=>sPg("statement")} style={cs({background:"linear-gradient(135deg,rgba(52,152,219,0.06),rgba(46,204,113,0.04))",borderColor:"rgba(52,152,219,0.12)",cursor:"pointer"})}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontSize:10,color:"#999"}}>純資産（総資産 − 負債）</span><span style={{fontSize:9,color:"#666"}}>📑 決算書 ›</span></div>
-            <div style={{fontSize:22,fontWeight:800,fontFamily:"monospace",color:netW>=0?"#3498DB":"#E74C3C",marginBottom:6}}>{netW>=0?"":"-"}¥{Math.abs(netW).toLocaleString()}</div>
+            <div style={{fontSize:22,fontWeight:800,fontFamily:"monospace",color:netW>=0?"#3498DB":"#E74C3C",marginBottom:6}}>{netWA>=0?"":"−"}¥{Math.abs(netWA).toLocaleString()}</div>
             <div style={{display:"flex",gap:14,fontSize:11}}>
               <span><span style={{color:"#888"}}>資産 </span><span style={{color:"#2ECC71",fontFamily:"monospace",fontWeight:600}}>¥{tAs.toLocaleString()}</span></span>
               <span><span style={{color:"#888"}}>負債 </span><span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{tLi.toLocaleString()}</span></span>
@@ -786,6 +854,23 @@ export default function Home() {
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>📅 月の管理</h3><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>sD((p:any)=>({...p,cur:k}))} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:k===cm?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.3)":"#333"),color:k===cm?"#FF6B6B":"#aaa"}}>{k}</button>)}<button onClick={()=>sShM(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.04)",border:"1px dashed #555",color:"#888"}}>+ 新規</button></div></div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💳 明細アップロード</h3><p style={{fontSize:11,color:"#999",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
+          <div style={cs()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#4ECDC4"}}>🏷️ カテゴリの管理</h3>
+              <button onClick={()=>openCat()} style={{background:"rgba(78,205,196,0.1)",border:"1px solid rgba(78,205,196,0.2)",color:"#4ECDC4",padding:"3px 10px",borderRadius:5,fontSize:10,cursor:"pointer",fontWeight:600}}>＋新規作成</button>
+            </div>
+            <p style={{fontSize:10,color:"#888",margin:"4px 0 8px"}}>自分のカテゴリを作れます。標準カテゴリも絵文字・色・固定/変動を変更OK（名前変更と削除は自作のみ）。</p>
+            <div style={{maxHeight:240,overflow:"auto"}}>
+              {Object.entries(EC).map(([name,v]:any)=>{const custom=!(name in ECB);return(
+                <div key={name} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",fontSize:11,borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                  <span style={{width:10,height:10,borderRadius:5,background:v.c,flexShrink:0}}/>
+                  <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.i} {name} {custom&&<span style={{fontSize:8,color:"#4ECDC4",border:"1px solid rgba(78,205,196,0.3)",borderRadius:4,padding:"0 4px",marginLeft:2}}>自作</span>}</span>
+                  <span style={{fontSize:9,color:v.t==="f"?"#3498DB":"#F39C12",flexShrink:0}}>{v.t==="f"?"固定":"変動"}</span>
+                  <button onClick={()=>openCat(name)} style={{background:"none",border:"none",color:"#888",cursor:"pointer",padding:"0 2px",fontSize:11}}>✎</button>
+                  {custom?<button onClick={()=>delCat(name)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button>:<span style={{width:10}}/>}
+                </div>);})}
+            </div>
+          </div>
           {Object.keys(D.rules||{}).length>0&&<div style={cs()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#9B59B6"}}>🧠 学習した仕分けルール（{Object.keys(D.rules).length}件）</h3>
@@ -847,6 +932,29 @@ export default function Home() {
 
       <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
       <BS open={shL} onClose={()=>sShL(false)} title={eLiId?"💳 負債を編集":"💳 負債を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eLiId?"金額・メモを変更できます。":"ローン残高やカード未払い分などを入力します。同じ種類は上書きされます。"}</p><FI label="種類" type="select" value={fLT} onChange={sfLT}>{LT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fLA} onChange={sfLA}/><FI label="メモ" value={fLN} onChange={sfLN} placeholder="例: 〇〇銀行 住宅ローン"/><button onClick={addLi} style={{...B1,background:"linear-gradient(135deg,#FF6B6B,#E74C3C)"}}>{eLiId?"保存":"追加"}</button></BS>
+      <BS open={shCat} onClose={()=>{sShCat(false);sECat(null);}} title={eCat?"🏷️ カテゴリを編集":"🏷️ カテゴリを作成"}>
+        {eCat&&(eCat in ECB)?<p style={{fontSize:11,color:"#999",margin:"0 0 12px"}}>標準カテゴリ <b style={{color:"#ddd"}}>{eCat}</b> の見た目と種別を変更します（名前は変更できません）。</p>
+        :<FI label="カテゴリ名" value={fCN} onChange={sfCN} placeholder="例: ペット / 子ども / 交際費"/>}
+        <div style={{display:"flex",gap:10,marginBottom:12}}>
+          <div style={{flex:1}}>
+            <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>絵文字</label>
+            <input value={fCI} onChange={(e:any)=>sfCI(e.target.value)} maxLength={2} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:16,outline:"none",textAlign:"center"}}/>
+          </div>
+          <div style={{flex:1}}>
+            <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>色</label>
+            <input type="color" value={fCCo} onChange={(e:any)=>sfCCo(e.target.value)} style={{width:"100%",height:41,boxSizing:"border-box",padding:4,background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,cursor:"pointer"}}/>
+          </div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>種別（固定費＝毎月ほぼ同額でかかるもの）</label>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>sfCT("v")} style={{flex:1,padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",background:fCT==="v"?"rgba(243,156,18,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(fCT==="v"?"rgba(243,156,18,0.4)":"#333"),color:fCT==="v"?"#F39C12":"#999",fontWeight:600}}>変動費</button>
+            <button onClick={()=>sfCT("f")} style={{flex:1,padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",background:fCT==="f"?"rgba(52,152,219,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(fCT==="f"?"rgba(52,152,219,0.4)":"#333"),color:fCT==="f"?"#3498DB":"#999",fontWeight:600}}>固定費</button>
+          </div>
+        </div>
+        <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:10,fontSize:11,color:"#ccc"}}>プレビュー: <span style={{padding:"2px 8px",borderRadius:8,background:fCCo+"22",color:fCCo}}>{fCI}{eCat&&(eCat in ECB)?eCat:(fCN||"カテゴリ名")}</span></div>
+        <button onClick={saveCat} style={B1}>{eCat?"保存":"作成"}</button>
+      </BS>
       <BS open={shT} onClose={()=>{sShT(false);sETx(null);}} title="✏️ 取引を編集">
         <FI label="日付" value={fTD} onChange={sfTD} placeholder="例: 07/15"/>
         <FI label="内容（店名）" value={fTN} onChange={sfTN} placeholder="例: スーパー〇〇"/>
