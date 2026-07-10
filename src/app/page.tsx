@@ -562,8 +562,15 @@ export default function Home() {
     });
     showToast(`🗑 「${name}」を削除しました`);
   };
-  // 検索・絞り込み・並び替え後の明細ビュー
+  // 検索・絞り込み・並び替え後の明細ビュー（qAll=trueなら全期間を横断検索）
+  const [qAll,sQAll]=useState(false);
   const listView=useMemo(()=>{
+    if(q&&qAll){
+      const k=kanaNorm(q);const out:any[]=[];
+      Object.entries(D.months).forEach(([mk,v]:any)=>{[...(v.cardExp||[]),...(v.manualExp||[])].forEach((t:any)=>{if(kanaNorm(t.description||"").includes(k)&&(!fCat||t.category===fCat))out.push({...t,_m:mk});});});
+      out.sort((a,b)=>String(b._m+b.date).localeCompare(String(a._m+a.date)));
+      return out;
+    }
     let l=allE as any[];
     if(q){const k=kanaNorm(q);l=l.filter((t:any)=>kanaNorm(t.description||"").includes(k));}
     if(fCat)l=l.filter((t:any)=>t.category===fCat);
@@ -571,7 +578,8 @@ export default function Home() {
     if(sortBy==="amount")l.sort((a,b)=>b.amount-a.amount);
     else l.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     return l;
-  },[allE,q,fCat,sortBy]);
+  },[allE,q,fCat,sortBy,qAll,D.months]);
+  const jumpMonth=(t:any)=>{if(!t._m)return;sD((p:any)=>({...p,cur:t._m}));showToast(`📅 ${t._m} に移動しました`);};
   const listSum=useMemo(()=>listView.reduce((s:number,t:any)=>s+t.amount,0),[listView]);
   // ── 月の比較（任意の2ヶ月をカテゴリ別に）──
   const [cmpA,sCmpA]=useState(""); const [cmpB,sCmpB]=useState("");
@@ -605,7 +613,7 @@ export default function Home() {
     const max=Math.max(1,...Object.values(byDay).map(v=>v.total));
     return{byDay,dim,off,max};
   },[allE,cm]);
-  useEffect(()=>{sQ("");sFCat("");sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
+  useEffect(()=>{sQ("");sFCat("");sQAll(false);sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
 
   // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
   const reCat=useCallback(()=>{
@@ -907,6 +915,7 @@ export default function Home() {
                 style={{width:"100%",boxSizing:"border-box",padding:"8px 10px 8px 30px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:12,outline:"none"}}/>
               {q&&<button onClick={()=>sQ("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#777",cursor:"pointer",fontSize:12}}>×</button>}
             </div>
+            {q&&<button onClick={()=>sQAll(a=>!a)} style={{background:qAll?"rgba(93,173,226,0.12)":"rgba(255,255,255,0.05)",border:"1px solid "+(qAll?"rgba(93,173,226,0.4)":"#333"),color:qAll?"#5DADE2":"#aaa",padding:"0 10px",borderRadius:10,fontSize:10,cursor:"pointer",whiteSpace:"nowrap",fontWeight:600}}>{qAll?"🌐 全期間":"📆 今月"}</button>}
             <button onClick={()=>sSortBy(s=>s==="date"?"amount":"date")} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#aaa",padding:"0 12px",borderRadius:10,fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>{sortBy==="date"?"📅 日付順":"💰 金額順"}</button>
           </div>
           {/* カテゴリ絞り込みチップ */}
@@ -915,18 +924,19 @@ export default function Home() {
             {srt.map(([c]:any)=>{const cfg=EC[c]||{i:"📦",c:"#888"};const on=fCat===c;return(
               <button key={c} onClick={()=>sFCat(on?"":c)} style={{flexShrink:0,padding:"4px 10px",borderRadius:999,fontSize:10,cursor:"pointer",background:on?cfg.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(on?cfg.c+"66":"#333"),color:on?cfg.c:"#999",fontWeight:600,whiteSpace:"nowrap"}}>{cfg.i}{c}</button>);})}
           </div>}
-          <p style={{fontSize:10,color:"#888",margin:"0 0 8px"}}>{(q||fCat)?`絞り込み結果: ${listView.length}件 ・ 合計 `:`💳${md.cardExp?.length||0} + ✏️${md.manualExp?.length||0} = ${allE.length}件 ・ 支出合計 `}<span style={{fontFamily:"monospace",color:"#FF6B6B",fontWeight:700}}>¥{listSum.toLocaleString()}</span></p>
+          <p style={{fontSize:10,color:"#888",margin:"0 0 8px"}}>{(q||fCat)?`${q&&qAll?"🌐全期間の":""}絞り込み結果: ${listView.length}件 ・ 合計 `:`💳${md.cardExp?.length||0} + ✏️${md.manualExp?.length||0} = ${allE.length}件 ・ 支出合計 `}<span style={{fontFamily:"monospace",color:"#FF6B6B",fontWeight:700}}>¥{listSum.toLocaleString()}</span>{q&&qAll&&<span style={{color:"#666"}}> ・ 行タップでその月へ移動</span>}</p>
           <div style={cs()}>
             {listView.length===0&&<p style={{fontSize:11,color:"#666",margin:0,textAlign:"center",padding:"12px 0"}}>{allE.length===0?"取引がありません。「明細取込」や「支出」から追加できます。":"条件に合う取引がありません。"}</p>}
-            {listView.map((t:any)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};return(
-            <div key={t.id} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11}}>
+            {listView.map((t:any)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};const cross=!!t._m;return(
+            <div key={cross?t._m+"-"+t.id:t.id} onClick={cross?()=>jumpMonth(t):undefined} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11,cursor:cross?"pointer":"default"}}>
+              {cross&&<span style={{fontSize:8,color:"#5DADE2",border:"1px solid rgba(93,173,226,0.3)",borderRadius:4,padding:"0 3px",flexShrink:0}}>{t._m.slice(2)}</span>}
               <span style={{flex:"0 0 34px",color:"#666",fontFamily:"monospace",fontSize:9}}>{t.date}</span>
               <span style={{fontSize:10}}>{t.source==="card"?"💳":"✏️"}</span>
-              <span onClick={()=>openTx(t)} style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#ddd",minWidth:0,cursor:"pointer"}}>{t.description}</span>
-              <span onClick={()=>openTx(t)} style={{fontFamily:"monospace",color:"#ddd",fontSize:10,cursor:"pointer"}}>¥{t.amount.toLocaleString()}</span>
-              {eI===t.id?<select value={t.category} onChange={(e:any)=>{hCC(t,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
-              :<span onClick={()=>sEI(t.id)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
-              <button onClick={()=>delTx(t)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>
+              <span onClick={cross?undefined:()=>openTx(t)} style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#ddd",minWidth:0,cursor:"pointer"}}>{t.description}</span>
+              <span onClick={cross?undefined:()=>openTx(t)} style={{fontFamily:"monospace",color:"#ddd",fontSize:10,cursor:"pointer"}}>¥{t.amount.toLocaleString()}</span>
+              {!cross&&eI===t.id?<select value={t.category} onChange={(e:any)=>{hCC(t,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
+              :<span onClick={cross?undefined:()=>sEI(t.id)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
+              {!cross&&<button onClick={()=>delTx(t)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>}
             </div>);})}
           </div>
         </div>)}
@@ -976,6 +986,10 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
             <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>ℹ️ このアプリについて</h3>
+            <p style={{fontSize:11,color:"#999",margin:0,lineHeight:1.8}}>💰 マイ家計簿 — <b style={{color:"#bbb"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
+            <span style={{color:"#777"}}>困ったとき：データが消えた→「バックアップの読み込み」で復元 ／ 仕分けが違う→明細でカテゴリをタップして修正（自動で学習）／ カテゴリを増やしたい→上の「カテゴリの管理」</span></p>
+          </div>
           <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(freshState());}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
         </div>)}
       </div>
