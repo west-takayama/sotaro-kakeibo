@@ -109,7 +109,10 @@ function parseCSV(text: string, rules?: Record<string, string>): any[] {
         if (/^-?\d+$/.test(c) && Math.abs(parseInt(c))===amount) continue;
         if (f.length > desc.length) desc = f;
       }
-      txns.push({ id: Date.now()+Math.random()*1e4, date: date.length>5?date.slice(5):date, description: desc||"不明", amount, category: autoCategory(desc, rules), source:"card" });
+      // 年付きの日付なら所属月(YYYY-MM)を持たせる（アップロード時の自動振り分けに使用）
+      const fm = date.match(/(\d{4})[\/\-](\d{1,2})[\/\-]\d{1,2}/);
+      const ym = fm ? fm[1]+"-"+fm[2].padStart(2,"0") : null;
+      txns.push({ id: Date.now()+Math.random()*1e4, date: date.length>5?date.slice(5):date, description: desc||"不明", amount, category: autoCategory(desc, rules), source:"card", ym });
     }
   }
   return txns;
@@ -166,7 +169,8 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
     if (!amount) continue;
     const store = (toks.slice(1, Math.max(2, payIdx - 1)).join(" ") || toks[1]).normalize("NFKC");
     const date = dm[2].padStart(2, "0") + "/" + dm[3].padStart(2, "0");
-    txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store, rules), source: "card" });
+    const ym = dm[1] + "-" + dm[2].padStart(2, "0"); // 所属月（自動振り分け用）
+    txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store, rules), source: "card", ym });
   }
   return txns;
 }
@@ -304,7 +308,7 @@ export default function Home() {
   // カテゴリ管理モーダル
   const [shCat,sShCat]=useState(false); const [eCat,sECat]=useState<string|null>(null);
   const [fCN,sfCN]=useState(""); const [fCI,sfCI]=useState("🏷️"); const [fCCo,sfCCo]=useState("#4ECDC4"); const [fCT,sfCT]=useState("v");
-  const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false);
+  const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false); const [upMode,sUpMode]=useState<"auto"|"cur">("auto");
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
   const [fAT,sfAT]=useState("savings"); const [fAA,sfAA]=useState(""); const [fAN,sfAN]=useState("");
@@ -332,7 +336,7 @@ export default function Home() {
       const e=exps.reduce((s:number,x:any)=>s+x.amount,0);
       exps.forEach((x:any)=>{catY[x.category]=(catY[x.category]||0)+x.amount;});
       if(i>0||e>0)mCount++;
-      yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e,sr:i>0?Math.max(0,Math.round((i-e)/i*100)):null};
+      yI+=i;yE+=e;return{name:k.slice(5)+"月",income:i,expense:e,cumI:yI,cumE:yE,sr:i>0?Math.max(0,Math.round((i-e)/i*100)):null};
     });
     const catTop=Object.entries(catY).sort((a,b)=>b[1]-a[1]).slice(0,3);
     return{y,yI,yE,yB:yI-yE,ch,mCount,catTop};
@@ -436,12 +440,39 @@ export default function Home() {
       if (txns.length === 0) {
         sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
       } else {
-        // ── 蓄積：すでに登録済みの取引（日付・金額・内容が同じ）はスキップ ──
-        const seen = new Set((md.cardExp || []).map((t:any)=>`${t.date}|${t.amount}|${t.description}`));
-        const fresh:any[] = []; let dup = 0;
-        for (const t of txns) { const k=`${t.date}|${t.amount}|${t.description}`; if (seen.has(k)) { dup++; continue; } seen.add(k); fresh.push(t); }
-        if (fresh.length === 0) sUpR(`ℹ️ ${txns.length}件すべて登録済みでした（重複スキップ）。`);
-        else { uM((m:any)=>({...m,cardExp:[...m.cardExp,...fresh]})); sUpR(`✅ ${fresh.length}件を「${cm}」に追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}`); }
+        // ── 行き先の月ごとにグループ化（自動＝取引の日付どおり / 手動＝表示中の月）──
+        const groups: Record<string, any[]> = {};
+        for (const t of txns) {
+          const key = (upMode==="auto" && t.ym) ? t.ym : cm;
+          const { ym, ...rest } = t;
+          (groups[key] = groups[key] || []).push(rest);
+        }
+        // 月ごとに重複（日付・金額・内容が同じ）をスキップして追加
+        const added: Record<string, number> = {}; let dup = 0;
+        const fresh: Record<string, any[]> = {};
+        for (const [key, list] of Object.entries(groups)) {
+          const seen = new Set(((D.months[key]?.cardExp) || []).map((t:any)=>`${t.date}|${t.amount}|${t.description}`));
+          for (const t of list) {
+            const k = `${t.date}|${t.amount}|${t.description}`;
+            if (seen.has(k)) { dup++; continue; }
+            seen.add(k); (fresh[key] = fresh[key] || []).push(t);
+          }
+          if (fresh[key]?.length) added[key] = fresh[key].length;
+        }
+        const total = Object.values(added).reduce((s,n)=>s+n,0);
+        if (total === 0) sUpR(`ℹ️ ${txns.length}件すべて登録済みでした（重複スキップ）。`);
+        else {
+          sD((p:any)=>{
+            const months = {...p.months};
+            for (const [key, list] of Object.entries(fresh)) {
+              const m = months[key] || { incomes:[], manualExp:[], cardExp:[] };
+              months[key] = { ...m, cardExp: [...(m.cardExp||[]), ...list] };
+            }
+            return { ...p, months };
+          });
+          const parts = Object.entries(added).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`);
+          sUpR(`✅ ${parts.join("、")}追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}`);
+        }
       }
     } catch(e:any) { sUpR("❌ 読み取りエラー: "+(e?.message||e)); }
     sUpL(false);
@@ -542,6 +573,20 @@ export default function Home() {
     return l;
   },[allE,q,fCat,sortBy]);
   const listSum=useMemo(()=>listView.reduce((s:number,t:any)=>s+t.amount,0),[listView]);
+  // ── 月の比較（任意の2ヶ月をカテゴリ別に）──
+  const [cmpA,sCmpA]=useState(""); const [cmpB,sCmpB]=useState("");
+  const monthKeys=useMemo(()=>Object.keys(D.months).filter(k=>{const v=D.months[k];return ((v.cardExp||[]).length+(v.manualExp||[]).length)>0;}).sort(),[D.months]);
+  const cmpData=useMemo(()=>{
+    if(monthKeys.length<2)return null;
+    const eB=monthKeys.includes(cmpB)?cmpB:(monthKeys.includes(cm)?cm:monthKeys[monthKeys.length-1]);
+    let eA=monthKeys.includes(cmpA)&&cmpA!==eB?cmpA:"";
+    if(!eA){const idx=monthKeys.indexOf(eB);eA=monthKeys[idx-1]??(monthKeys.find(k=>k!==eB) as string);}
+    const catTotals=(k:string)=>{const v=D.months[k];const m:Record<string,number>={};[...(v.cardExp||[]),...(v.manualExp||[])].forEach((t:any)=>{m[t.category]=(m[t.category]||0)+t.amount;});return m;};
+    const A=catTotals(eA),B=catTotals(eB);
+    const cats=[...new Set([...Object.keys(A),...Object.keys(B)])].map(c=>({name:c,a:A[c]||0,b:B[c]||0})).sort((x,y)=>Math.max(y.a,y.b)-Math.max(x.a,x.b)).slice(0,10);
+    const tA=Object.values(A).reduce((s,v)=>s+v,0),tB=Object.values(B).reduce((s,v)=>s+v,0);
+    return{eA,eB,cats,tA,tB};
+  },[monthKeys,cmpA,cmpB,cm,D.months]);
   // 固定費・サブスク一覧（同じ店をまとめて月額と年換算を出す）
   const fixedList=useMemo(()=>{
     const map:Record<string,{desc:string,cat:string,total:number,count:number}>={};
@@ -681,6 +726,20 @@ export default function Home() {
               {yD.mCount>1&&<SR l={`月平均支出（${yD.mCount}ヶ月）`} v={Math.round(yD.yE/yD.mCount)} c="#FFB347" sm/>}
               {yD.mCount>1&&yD.catTop.length>0&&<div style={{marginTop:6}}><div style={{fontSize:9,color:"#888",marginBottom:2}}>年間の支出トップ3</div>{yD.catTop.map(([c,v]:any)=><SR key={c} l={(EC[c]?.i||"")+" "+c} v={v} c={EC[c]?.c||"#888"} sm/>)}</div>}
               {yD.ch.length>1&&<div style={{marginTop:8}}><ResponsiveContainer width="100%" height={120}><BarChart data={yD.ch} margin={{top:8,right:4,left:-20,bottom:0}}><XAxis dataKey="name" tick={{fill:"#888",fontSize:9}} axisLine={false} tickLine={false}/><YAxis hide/><Tooltip content={<TT/>}/><Bar dataKey="income" fill="#2ECC71" radius={[3,3,0,0]} name="収入"/><Bar dataKey="expense" fill="#FF6B6B" radius={[3,3,0,0]} name="支出"/></BarChart></ResponsiveContainer></div>}
+              {yD.ch.length>1&&<div style={{marginTop:8}}>
+                <div style={{fontSize:9,color:"#888",marginBottom:2}}>収入・支出の累計推移</div>
+                <ResponsiveContainer width="100%" height={110}><AreaChart data={yD.ch} margin={{top:6,right:8,left:-16,bottom:0}}>
+                  <defs>
+                    <linearGradient id="cig" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2ECC71" stopOpacity={0.25}/><stop offset="95%" stopColor="#2ECC71" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="ceg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FF6B6B" stopOpacity={0.25}/><stop offset="95%" stopColor="#FF6B6B" stopOpacity={0}/></linearGradient>
+                  </defs>
+                  <XAxis dataKey="name" tick={{fill:"#888",fontSize:9}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#666",fontSize:8}} tickFormatter={(v:number)=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?Math.round(v/1e3)+"k":String(v)} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={({active,payload}:any)=>active&&payload?.length?<div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:11,color:"#ddd"}}><div>{payload[0].payload.name}まで</div><div style={{color:"#2ECC71"}}>収入計 ¥{payload[0].payload.cumI.toLocaleString()}</div><div style={{color:"#FF6B6B"}}>支出計 ¥{payload[0].payload.cumE.toLocaleString()}</div></div>:null}/>
+                  <Area type="monotone" dataKey="cumI" stroke="#2ECC71" fill="url(#cig)" strokeWidth={2} name="収入累計"/>
+                  <Area type="monotone" dataKey="cumE" stroke="#FF6B6B" fill="url(#ceg)" strokeWidth={2} name="支出累計"/>
+                </AreaChart></ResponsiveContainer>
+                <div style={{display:"flex",gap:12,fontSize:9,color:"#888",justifyContent:"center"}}><span><span style={{color:"#2ECC71"}}>●</span> 収入の累計</span><span><span style={{color:"#FF6B6B"}}>●</span> 支出の累計</span></div>
+              </div>}
               {yD.ch.filter((c:any)=>c.sr!=null).length>1&&<div style={{marginTop:8}}>
                 <div style={{fontSize:9,color:"#888",marginBottom:2}}>貯蓄率の推移（%）</div>
                 <ResponsiveContainer width="100%" height={90}><AreaChart data={yD.ch} margin={{top:6,right:8,left:-24,bottom:0}}>
@@ -705,6 +764,31 @@ export default function Home() {
                 </div>
                 <div style={{height:3,background:"rgba(255,255,255,0.05)",borderRadius:2}}><div style={{height:"100%",width:w+"%",background:d>0?"#FF6B6B":"#2ECC71",borderRadius:2}}/></div>
               </div>);})}
+          </div>}
+
+          {/* ── 月の比較（任意の2ヶ月・カテゴリ別）── */}
+          {cmpData&&<div style={cs()}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🆚 月の比較（カテゴリ別）</h3>
+            <p style={{fontSize:9,color:"#666",margin:"0 0 8px"}}>好きな2つの月を選んで、どこが変わったか見比べられます</p>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>
+              <select value={cmpData.eA} onChange={(e:any)=>sCmpA(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(93,173,226,0.08)",border:"1px solid rgba(93,173,226,0.3)",borderRadius:8,color:"#5DADE2",fontSize:12,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
+              <span style={{fontSize:11,color:"#888"}}>vs</span>
+              <select value={cmpData.eB} onChange={(e:any)=>sCmpB(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(255,107,107,0.08)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:8,color:"#FF6B6B",fontSize:12,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:8,padding:"8px 10px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
+              <span style={{color:"#5DADE2",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tA.toLocaleString()}</span>
+              <span style={{color:cmpData.tB<=cmpData.tA?"#2ECC71":"#FF6B6B",fontWeight:700,fontSize:10}}>{cmpData.tB<=cmpData.tA?"▼":"▲"} {cmpData.tB<=cmpData.tA?"−":"＋"}¥{Math.abs(cmpData.tB-cmpData.tA).toLocaleString()}</span>
+              <span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tB.toLocaleString()}</span>
+            </div>
+            <ResponsiveContainer width="100%" height={Math.max(180,cmpData.cats.length*38)}>
+              <BarChart data={cmpData.cats.map(c=>({...c,label:(EC[c.name]?.i||"")+" "+c.name}))} layout="vertical" margin={{left:96,right:8,top:4,bottom:4}} barGap={1}>
+                <XAxis type="number" hide/><YAxis type="category" dataKey="label" width={96} tick={{fill:"#aaa",fontSize:9}} axisLine={false} tickLine={false}/>
+                <Tooltip content={({active,payload}:any)=>active&&payload?.length?<div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:11,color:"#ddd"}}><div>{payload[0].payload.name}</div><div style={{color:"#5DADE2"}}>{cmpData.eA}: ¥{payload[0].payload.a.toLocaleString()}</div><div style={{color:"#FF6B6B"}}>{cmpData.eB}: ¥{payload[0].payload.b.toLocaleString()}</div></div>:null}/>
+                <Bar dataKey="a" fill="#5DADE2" radius={[0,3,3,0]} name={cmpData.eA} barSize={9}/>
+                <Bar dataKey="b" fill="#FF6B6B" radius={[0,3,3,0]} name={cmpData.eB} barSize={9}/>
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{display:"flex",gap:12,fontSize:9,color:"#888",justifyContent:"center",marginTop:2}}><span><span style={{color:"#5DADE2"}}>●</span> {cmpData.eA}</span><span><span style={{color:"#FF6B6B"}}>●</span> {cmpData.eB}</span></div>
           </div>}
 
           {/* ── 支出カレンダー ── */}
@@ -920,8 +1004,15 @@ export default function Home() {
       </BS>
 
       <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
-        <p style={{fontSize:12,color:"#bbb",margin:"0 0 8px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。今表示中の月「{cm}」に追加されます。</p>
-        <p style={{fontSize:10,color:"#777",margin:"0 0 12px",lineHeight:1.6}}>※ 同じ取引（日付・金額・内容が一致）は自動でスキップされるので、何度アップロードしても重複しません。PDFは文字情報のあるもののみ対応（画像スキャンは不可）。</p>
+        <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。</p>
+        <div style={{marginBottom:10}}>
+          <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>取引の入れ先</label>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>sUpMode("auto")} style={{flex:1,padding:"8px 4px",borderRadius:8,fontSize:10,cursor:"pointer",background:upMode==="auto"?"rgba(46,204,113,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(upMode==="auto"?"rgba(46,204,113,0.4)":"#333"),color:upMode==="auto"?"#2ECC71":"#999",fontWeight:600,lineHeight:1.5}}>📅 日付どおりの月へ<br/>自動振り分け（推奨）</button>
+            <button onClick={()=>sUpMode("cur")} style={{flex:1,padding:"8px 4px",borderRadius:8,fontSize:10,cursor:"pointer",background:upMode==="cur"?"rgba(52,152,219,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(upMode==="cur"?"rgba(52,152,219,0.4)":"#333"),color:upMode==="cur"?"#3498DB":"#999",fontWeight:600,lineHeight:1.5}}>📌 表示中の月へ<br/>（{cm}）</button>
+          </div>
+        </div>
+        <p style={{fontSize:10,color:"#777",margin:"0 0 12px",lineHeight:1.6}}>※ 月をまたぐ明細も自動で正しい月に入ります。同じ取引（日付・金額・内容が一致）は自動スキップされるので、何度アップロードしても重複しません。PDFは文字情報のあるもののみ対応。</p>
         <div onClick={()=>{if(upL)return;const inp=document.createElement("input");inp.type="file";inp.accept=".csv,.tsv,.txt,.pdf,application/pdf";inp.onchange=(e:any)=>e.target.files[0]&&handleUpload(e.target.files[0]);inp.click();}}
           style={{border:"2px dashed #333",borderRadius:14,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.02)",marginBottom:12}}>
           {upL?<div><div style={{fontSize:28}}>⏳</div><p style={{color:"#999",fontSize:12,margin:"6px 0 0"}}>読み取り中...</p></div>
