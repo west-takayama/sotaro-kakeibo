@@ -296,7 +296,7 @@ export default function Home() {
   const [D,sD]=useState(DEF); const [pg,sPg]=useState("home"); const [rdy,sRdy]=useState(false);
   const [shI,sShI]=useState(false); const [shE,sShE]=useState(false); const [shA,sShA]=useState(false);
   const [shG,sShG]=useState(false); const [shM,sShM]=useState(false); const [shIn,sShIn]=useState(false);
-  const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null);
+  const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null); const [shHow,sShHow]=useState(false);
   const [shB,sShB]=useState(false); const [fBT,sfBT]=useState(""); const [fBC,sfBC]=useState<Record<string,string>>({});
   const [q,sQ]=useState(""); const [fCat,sFCat]=useState(""); const [sortBy,sSortBy]=useState<"date"|"amount">("date");
   const [shT,sShT]=useState(false); const [eTx,sETx]=useState<any>(null);
@@ -580,6 +580,18 @@ export default function Home() {
     return l;
   },[allE,q,fCat,sortBy,qAll,D.months]);
   const jumpMonth=(t:any)=>{if(!t._m)return;sD((p:any)=>({...p,cur:t._m}));showToast(`📅 ${t._m} に移動しました`);};
+  // 前月の手入力固定費（家賃など現金払いの毎月支出）を今月へワンタップコピー
+  const copyPrevManual=()=>{
+    const pm=D.months[prevKey];if(!pm)return;
+    const fixed=(pm.manualExp||[]).filter((t:any)=>EC[t.category]?.t==="f");
+    if(!fixed.length){showToast("前月に手入力の固定費がありません");return;}
+    const seen=new Set((md.manualExp||[]).map((t:any)=>`${t.description}|${t.amount}`));
+    const fresh=fixed.filter((t:any)=>!seen.has(`${t.description}|${t.amount}`)).map((t:any)=>{const dd=String(t.date||"").split("/")[1]||"01";return{...t,id:Date.now()+Math.random()*1e4,date:`${cm.slice(5)}/${dd}`};});
+    if(!fresh.length){showToast("すべてコピー済みです");return;}
+    if(!confirm(`前月の手入力固定費 ${fresh.length}件（${fresh.map((t:any)=>t.description).slice(0,3).join("・")}${fresh.length>3?" ほか":""}）を今月にコピーしますか？`))return;
+    uM((m:any)=>({...m,manualExp:[...m.manualExp,...fresh]}));
+    showToast(`↩️ 前月の固定費 ${fresh.length}件をコピーしました`);
+  };
   const listSum=useMemo(()=>listView.reduce((s:number,t:any)=>s+t.amount,0),[listView]);
   // ── 月の比較（任意の2ヶ月をカテゴリ別に）──
   const [cmpA,sCmpA]=useState(""); const [cmpB,sCmpB]=useState("");
@@ -911,6 +923,7 @@ export default function Home() {
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
               </div>);})}</div>}
           </div>
+          {(D.months[prevKey]?.manualExp||[]).some((t:any)=>EC[t.category]?.t==="f")&&<button onClick={copyPrevManual} style={{background:"rgba(78,205,196,0.03)",border:"1px dashed rgba(78,205,196,0.3)",color:"#4ECDC4",padding:"8px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginBottom:8,fontWeight:600}}>↩️ 前月の手入力固定費（家賃など）を今月にコピー</button>}
           {/* 検索・並び替え */}
           <div style={{display:"flex",gap:6,marginBottom:8}}>
             <div style={{position:"relative",flex:1}}>
@@ -990,6 +1003,15 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
             <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
+          <div style={cs()}><button onClick={()=>sShHow(!shHow)} style={{background:"none",border:"none",color:"#FFB347",fontSize:13,fontWeight:600,cursor:"pointer",padding:0,width:"100%",textAlign:"left"}}>📖 使い方ガイド {shHow?"▲":"▼"}</button>
+            {shHow&&<div style={{marginTop:10,fontSize:11,color:"#bbb",lineHeight:1.9}}>
+              <p style={{margin:"0 0 8px"}}><b style={{color:"#3498DB"}}>1. 明細を取り込む</b><br/>カード会社のサイトでCSVかPDFをダウンロード→「明細取込」でアップ。日付どおりの月へ自動で振り分けられ、重複は自動スキップ。毎月アップするだけでたまっていきます。</p>
+              <p style={{margin:"0 0 8px"}}><b style={{color:"#2ECC71"}}>2. 仕分けを育てる</b><br/>「明細」タブでカテゴリをタップして直すと、同じ店は次回から自動で正しく仕分けされます。自分のカテゴリは「カテゴリの管理」で作成。</p>
+              <p style={{margin:"0 0 8px"}}><b style={{color:"#4ECDC4"}}>3. 予算と目標を決める</b><br/>ホームで月の予算を設定→「1日あと¥◯使える」が見えます。「資産」タブで純資産の目標も設定できます。</p>
+              <p style={{margin:"0 0 8px"}}><b style={{color:"#FF8E53"}}>4. 決算書で振り返る</b><br/>P/L＝その月の稼ぎと使い、B/S＝今の資産と借金。月の比較・カレンダー・固定費一覧でどこを直すか探せます。</p>
+              <p style={{margin:0}}><b style={{color:"#9B59B6"}}>5. 月に1回バックアップ</b><br/>データは端末内だけ。下の「書き出し」でファイル保存しておけば機種変更も安心です。</p>
+            </div>}
+          </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>ℹ️ このアプリについて</h3>
             <p style={{fontSize:11,color:"#999",margin:0,lineHeight:1.8}}>💰 マイ家計簿 — <b style={{color:"#bbb"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
             <span style={{color:"#777"}}>困ったとき：データが消えた→「バックアップの読み込み」で復元 ／ 仕分けが違う→明細でカテゴリをタップして修正（自動で学習）／ カテゴリを増やしたい→上の「カテゴリの管理」</span></p>
@@ -1044,9 +1066,15 @@ export default function Home() {
       <BS open={shCat} onClose={()=>{sShCat(false);sECat(null);}} title={eCat?"🏷️ カテゴリを編集":"🏷️ カテゴリを作成"}>
         {eCat&&(eCat in ECB)?<p style={{fontSize:11,color:"#999",margin:"0 0 12px"}}>標準カテゴリ <b style={{color:"#ddd"}}>{eCat}</b> の見た目と種別を変更します（名前は変更できません）。</p>
         :<FI label="カテゴリ名" value={fCN} onChange={sfCN} placeholder="例: ペット / 子ども / 交際費"/>}
+        <div style={{marginBottom:8}}>
+          <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>よく使う絵文字（タップで選択）</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+            {["🐕","🐈","👶","🎁","✈️","🍺","☕","💊","📱","🎨","⚽","🎮","🎓","🛒","💼","🚗","🎵","📷","🌸","💐"].map(e=><button key={e} onClick={()=>sfCI(e)} style={{fontSize:15,padding:"4px 7px",borderRadius:8,cursor:"pointer",background:fCI===e?"rgba(78,205,196,0.2)":"rgba(255,255,255,0.04)",border:"1px solid "+(fCI===e?"rgba(78,205,196,0.5)":"#333")}}>{e}</button>)}
+          </div>
+        </div>
         <div style={{display:"flex",gap:10,marginBottom:12}}>
           <div style={{flex:1}}>
-            <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>絵文字</label>
+            <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>絵文字（自由入力も可）</label>
             <input value={fCI} onChange={(e:any)=>sfCI(e.target.value)} maxLength={2} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:16,outline:"none",textAlign:"center"}}/>
           </div>
           <div style={{flex:1}}>
