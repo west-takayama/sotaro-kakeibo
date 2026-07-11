@@ -318,6 +318,10 @@ export default function Home() {
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}}); else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
+  // PWAショートカット（アイコン長押し）からの起動: /?p=exp|list|st
+  useEffect(()=>{if(!rdy)return;const p=new URLSearchParams(window.location.search).get("p");if(!p)return;
+    if(p==="exp"){sPg("home");sShE(true);}else if(p==="list")sPg("list");else if(p==="st")sPg("statement");
+    window.history.replaceState(null,"","/");},[rdy]);
 
   const cm=D.cur; const md=D.months[cm]||{incomes:[],manualExp:[],cardExp:[]};
   const allE=useMemo(()=>[...(md.cardExp||[]),...(md.manualExp||[])],[md]);
