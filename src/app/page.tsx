@@ -195,6 +195,39 @@ const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as an
 const localYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const localYMD = (d = new Date()) => `${localYM(d)}-${String(d.getDate()).padStart(2,"0")}`;
 const freshState = () => { const m = localYM(); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
+// 初めての人が完成イメージを掴むためのサンプルデータ（現在月＋前月）
+const sampleState = () => {
+  const now = new Date(); const cur = localYM(now);
+  const pd = new Date(now.getFullYear(), now.getMonth()-1, 1); const prev = localYM(pd);
+  const mm = cur.slice(5), pmm = prev.slice(5);
+  let i = 0; const id = () => 9e11 + (i++);
+  const ce = (mo:string, rows:[string,string,number,string][]) => rows.map(([d,n,a,c]) => ({id:id(),date:`${mo}/${d}`,description:n,amount:a,category:c,source:"card"}));
+  const common:[string,string,number,string][] = [
+    ["03","楽天でんき",9800,"光熱費"],["05","ソフトバンク",7200,"通信費"],["06","Netflix",1490,"サブスク"],
+    ["08","セブン-イレブン",640,"食費（コンビニ）"],["10","いなげや",8200,"食費（自炊）"],
+    ["12","スターバックス",680,"食費（外食）"],["15","楽天証券 投信積立",30000,"投資・貯蓄"],
+    ["18","エネオス",5200,"交通・車"],["21","ユニクロ",6900,"美容・衣服"],["25","すき家",890,"食費（外食）"],
+  ];
+  return {
+    ...DEF, cur,
+    months: {
+      [prev]: { incomes:[{type:"salary",amount:320000,note:"",id:id()}], manualExp:[{id:id(),date:`${pmm}/01`,description:"家賃",amount:78000,category:"家賃・住居",source:"manual"}],
+        cardExp: ce(pmm, [...common, ["28","ビックカメラ",24800,"家電"]]) },
+      [cur]: { incomes:[{type:"salary",amount:320000,note:"",id:id()},{type:"side",amount:45000,note:"副業",id:id()}],
+        manualExp:[{id:id(),date:`${mm}/01`,description:"家賃",amount:78000,category:"家賃・住居",source:"manual"}],
+        cardExp: ce(mm, common) },
+    },
+    assets: [{type:"savings",amount:1250000,note:"メイン口座",id:id()},{type:"funds",amount:680000,note:"つみたてNISA",id:id()},{type:"stocks",amount:320000,note:"",id:id()}],
+    liabilities: [{type:"card_debt",amount:95000,note:"",id:id()}],
+    assetHist: [
+      {date:`${prev}-01`,assets:2000000,liab:110000,net:1890000,total:2000000},
+      {date:`${cur}-01`,assets:2250000,liab:95000,net:2155000,total:2250000},
+    ],
+    goal: {target:600000,label:"旅行資金",nw:5000000},
+    budget: {total:220000,cat:{"食費（外食）":15000,"食費（コンビニ）":8000}},
+    sample: true,
+  };
+};
 // 読み込んだデータのcurが欠落・不正なら最新の月に補正（旧形式バックアップ対策）
 const fixCur = (o: any) => {
   const keys = Object.keys(o.months||{}).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
@@ -721,6 +754,14 @@ export default function Home() {
             <button onClick={()=>sShUp(true)} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(52,152,219,0.08)",border:"1px solid rgba(52,152,219,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>1️⃣ 💳 <b>カード明細（CSV/PDF）を取り込む</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>自動でカテゴリ仕分けされます</span></button>
             <button onClick={()=>openIn()} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>2️⃣ 💼 <b>今月の収入を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>貯蓄率が見えるようになります</span></button>
             <button onClick={()=>sPg("assets")} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer"}}>3️⃣ 💎 <b>資産・負債を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>純資産と決算書(B/S)が完成します</span></button>
+            <div style={{borderTop:"1px dashed rgba(255,255,255,0.12)",margin:"12px 0 10px"}}/>
+            <button onClick={()=>{sD(sampleState());showToast("🎁 サンプルデータを表示中です");}} style={{display:"block",width:"100%",background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.3)",color:"#FFB347",padding:"11px 12px",borderRadius:10,fontSize:12,cursor:"pointer",fontWeight:600}}>🎁 まずはサンプルで試してみる<span style={{display:"block",fontSize:10,color:"#a98",marginTop:2,fontWeight:400}}>完成イメージを体験（あとで消して自分のを入力できます）</span></button>
+          </div>}
+          {(D as any).sample&&<div style={cs({background:"rgba(255,179,71,0.08)",borderColor:"rgba(255,179,71,0.3)",padding:"10px 14px"})}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:"#FFB347",fontWeight:600}}>🎁 サンプルデータを表示中</span>
+              <button onClick={()=>{if(confirm("サンプルを消して、空の状態から自分のデータを入力しますか？")){sD(freshState());showToast("✨ 準備完了！明細を取り込んでみましょう");}}} style={{background:"rgba(255,179,71,0.15)",border:"1px solid rgba(255,179,71,0.35)",color:"#FFB347",padding:"5px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>消して自分のを入力</button>
+            </div>
           </div>}
           <div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.06),rgba(255,179,71,0.04))",borderColor:"rgba(255,107,107,0.12)",padding:16})}>
             <div style={{fontSize:10,color:"#999"}}>今月の収支</div>
