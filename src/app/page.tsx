@@ -379,6 +379,21 @@ export default function Home() {
   useEffect(()=>{if(rdy&&!SV(D)) showToast("⚠️ 保存できませんでした。端末の空き容量やプライベートモードをご確認ください");},[D,rdy,showToast]);
   // オフライン対応: Service Worker登録（一度開けば圏外でも起動できる）
   useEffect(()=>{if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});},[]);
+  // ホーム画面への追加（インストール）導線
+  const [installEvt,sInstallEvt]=useState<any>(null); const [showInstall,sShowInstall]=useState(false);
+  useEffect(()=>{
+    try{ if(localStorage.getItem("kakeibo-hideInstall")) return; }catch{}
+    const standalone = (window.matchMedia?.("(display-mode: standalone)").matches) || (navigator as any).standalone;
+    if(standalone) return; // すでにインストール済み
+    const onBip=(e:any)=>{e.preventDefault();sInstallEvt(e);sShowInstall(true);};
+    window.addEventListener("beforeinstallprompt",onBip);
+    // iOS Safari は beforeinstallprompt 非対応 → 手動追加のヒントを出す
+    const ua=navigator.userAgent; const isIOS=/iphone|ipad|ipod/i.test(ua); const isSafari=/safari/i.test(ua)&&!/crios|fxios|edgios/i.test(ua);
+    if(isIOS&&isSafari) sShowInstall(true);
+    return ()=>window.removeEventListener("beforeinstallprompt",onBip);
+  },[]);
+  const dismissInstall=()=>{sShowInstall(false);try{localStorage.setItem("kakeibo-hideInstall","1");}catch{}};
+  const doInstall=async()=>{ if(installEvt){installEvt.prompt();try{await installEvt.userChoice;}catch{} sInstallEvt(null);sShowInstall(false);} else { sShIn(true); sShowInstall(false); sPg("more"); } };
   // PWAショートカット（アイコン長押し）からの起動: /?p=exp|list|st
   useEffect(()=>{if(!rdy)return;const p=new URLSearchParams(window.location.search).get("p");if(!p)return;
     if(p==="exp"){sPg("home");sShE(true);}else if(p==="list")sPg("list");else if(p==="st")sPg("statement");
@@ -748,6 +763,17 @@ export default function Home() {
               <button onClick={()=>shiftMonth(1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>›</button>
             </div>
           </div>
+          {showInstall&&<div style={cs({background:"linear-gradient(135deg,rgba(52,152,219,0.1),rgba(46,204,113,0.06))",borderColor:"rgba(52,152,219,0.25)",padding:"12px 14px"})}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:24}}>📲</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#eee"}}>ホーム画面に追加</div>
+                <div style={{fontSize:10,color:"#999",lineHeight:1.5}}>{installEvt?"アプリのように起動。オフラインでも使えます":"共有ボタン→「ホーム画面に追加」でアプリのように使えます"}</div>
+              </div>
+              <button onClick={doInstall} style={{background:"linear-gradient(135deg,#3498DB,#2ECC71)",border:"none",color:"#fff",padding:"8px 14px",borderRadius:8,fontSize:11,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",flexShrink:0}}>{installEvt?"追加":"方法"}</button>
+              <button onClick={dismissInstall} style={{background:"none",border:"none",color:"#666",cursor:"pointer",fontSize:14,flexShrink:0,padding:0}}>×</button>
+            </div>
+          </div>}
           {isEmpty&&<div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.08),rgba(255,179,71,0.05))",borderColor:"rgba(255,107,107,0.2)"})}>
             <h3 style={{fontSize:13,fontWeight:700,margin:"0 0 4px",color:"#eee"}}>👋 ようこそ！3ステップで始めましょう</h3>
             <p style={{fontSize:10,color:"#999",margin:"0 0 10px"}}>データはこの端末の中だけに保存。無料・登録不要・外部送信なし。</p>
