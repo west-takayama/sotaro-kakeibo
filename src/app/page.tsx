@@ -76,9 +76,12 @@ const CAT_KW: [string, string[]][] = [
 function autoCategory(desc: string, rules?: Record<string, string>): string {
   const d = kanaNorm(desc);
   // ① 学習済みルール（ユーザーが手で直した店名）を最優先
+  //    誤爆防止: 完全一致 → 「取引名がルール名を含む」片方向のみ・3文字以上・最長一致
   if (rules) {
     if (rules[d]) return rules[d];
-    for (const k in rules) { if (k && (d.includes(k) || k.includes(d))) return rules[k]; }
+    let best = "";
+    for (const k in rules) { if (k.length >= 3 && d.includes(k) && k.length > best.length) best = k; }
+    if (best) return rules[best];
   }
   // ② キーワード辞書
   for (const [cat, kws] of CAT_KW) {
@@ -86,11 +89,22 @@ function autoCategory(desc: string, rules?: Record<string, string>): string {
   }
   return "その他";
 }
+// 引用符対応のCSV行分割（"12,340" のようなカンマ入り金額・店名を壊さない）
+function splitCsvLine(line: string): string[] {
+  const out: string[] = []; let cur = ""; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else { if (ch === '"') q = true; else if (ch === "," || ch === "\t") { out.push(cur); cur = ""; } else cur += ch; }
+  }
+  out.push(cur);
+  return out.map(f => f.trim());
+}
 function parseCSV(text: string, rules?: Record<string, string>): any[] {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const txns: any[] = [];
   for (const line of lines) {
-    const fields = line.split(/[,\t]/).map(f => f.trim().replace(/^"|"$/g, "")).filter(Boolean);
+    const fields = splitCsvLine(line).filter(Boolean);
     if (fields.length < 2) continue;
     let date: string|null = null, amount: number|null = null;
     for (const f of fields) {
@@ -177,7 +191,16 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
 
 // ═══ 初期状態（デモデータなし・まっさらな状態から開始）═══
 const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
-const freshState = () => { const m = new Date().toISOString().slice(0,7); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
+// ローカル時刻基準の年月・年月日（UTC基準だと日本の月初0時〜9時に月がズレる）
+const localYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+const localYMD = (d = new Date()) => `${localYM(d)}-${String(d.getDate()).padStart(2,"0")}`;
+const freshState = () => { const m = localYM(); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
+// 読み込んだデータのcurが欠落・不正なら最新の月に補正（旧形式バックアップ対策）
+const fixCur = (o: any) => {
+  const keys = Object.keys(o.months||{}).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
+  if (o.cur && o.months?.[o.cur]) return o.cur;
+  return keys[keys.length-1] || localYM();
+};
 
 // ═══ スマートコメント（端末内で完結・API不要）═══
 // 前月比・貯蓄率・カテゴリ動向・純資産の進捗からコメントを生成。褒めて伸ばすトーン。
@@ -244,11 +267,11 @@ function genAdvice(tI:number, tE:number, bC:any, x:any={}) {
 }
 // 数字がヌルッと増えるカウントアップ（モチベーション演出・軽量）
 function useCountUp(v: number, dur = 550) {
-  const [x, sX] = useState(v); const pr = useRef(v);
+  const [x, sX] = useState(v); const disp = useRef(v);
   useEffect(() => {
-    const from = pr.current, to = v; if (from === to) return; pr.current = to;
+    const from = disp.current, to = v; if (from === to) return; // 表示中の値から滑らかに継続（連続更新でも跳ばない）
     const t0 = performance.now(); let raf = 0;
-    const step = (t: number) => { const p = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - p, 3); sX(Math.round(from + (to - from) * e)); if (p < 1) raf = requestAnimationFrame(step); };
+    const step = (t: number) => { const p = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - p, 3); const cur = Math.round(from + (to - from) * e); disp.current = cur; sX(cur); if (p < 1) raf = requestAnimationFrame(step); };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [v, dur]);
@@ -303,6 +326,9 @@ export default function Home() {
   const [fTD,sfTD]=useState(""); const [fTN,sfTN]=useState(""); const [fTA,sfTA]=useState(""); const [fTC,sfTC]=useState("その他");
   const [toast,sToast]=useState<string|null>(null); const toastT=useRef<any>(null);
   const showToast=useCallback((msg:string)=>{sToast(msg);clearTimeout(toastT.current);toastT.current=setTimeout(()=>sToast(null),2200);},[]);
+  // 日またぎ・アプリ復帰時に「今日」を更新（予算の残り日数/1日ペースを最新に保つ）
+  const [dayKey,sDayKey]=useState("");
+  useEffect(()=>{const u=()=>sDayKey(new Date().toDateString());u();window.addEventListener("focus",u);document.addEventListener("visibilitychange",u);return()=>{window.removeEventListener("focus",u);document.removeEventListener("visibilitychange",u);};},[]);
   // 組み込みカテゴリ＋ユーザー定義/上書き（D.cats）をマージ。以降このECを参照する
   const EC=useMemo(()=>{const m:Record<string,{i:string;c:string;t:string}>={...ECB};Object.entries((D as any).cats||{}).forEach(([k,v]:any)=>{m[k]={...(m[k]||{i:"🏷️",c:"#95A5A6",t:"v"}),...v};});return m;},[D]);
   // カテゴリ管理モーダル
@@ -316,7 +342,7 @@ export default function Home() {
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
 
-  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length) sD({...DEF,...s,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}}); else sD(freshState()); sRdy(true);},[]);
+  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
   // PWAショートカット（アイコン長押し）からの起動: /?p=exp|list|st
   useEffect(()=>{if(!rdy)return;const p=new URLSearchParams(window.location.search).get("p");if(!p)return;
@@ -374,7 +400,7 @@ export default function Home() {
     if(cm===curKey){const [y,m]=cm.split("-").map(Number);const dim=new Date(y,m,0).getDate();daysLeft=dim-now.getDate()+1;const rem=total-tE;if(total>0&&rem>0&&daysLeft>0)perDay=Math.floor(rem/daysLeft);}
     const overCats=Object.entries(catB).map(([c,b]:any)=>[c,(bC[c]?.total||0)-b] as [string,number]).filter(([,d])=>d>0).sort((a,b)=>b[1]-a[1]);
     return{total,spent:tE,perDay,daysLeft,catB,overCats};
-  },[budCfg,cm,tE,bC]);
+  },[budCfg,cm,tE,bC,dayKey]);
   const advCtx=useMemo(()=>{
     const ups=catDelta.filter(([,d])=>d>0),downs=catDelta.filter(([,d])=>d<0);
     const h=D.assetHist;let histUp=0,isPeak=false;
@@ -389,7 +415,7 @@ export default function Home() {
     }
     // 週末にどれだけ使っているか
     let weekendShare:number|null=null;
-    if(tE>0&&cm){const [yy,mo]=cm.split("-").map(Number);let wk=0;allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const day=new Date(yy,mo-1,parseInt(m[2],10)).getDay();if(day===0||day===6)wk+=t.amount;});weekendShare=wk/tE;}
+    if(tE>0&&cm){const [yy]=cm.split("-").map(Number);let wk=0;allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const day=new Date(yy,parseInt(m[1],10)-1,parseInt(m[2],10)).getDay();if(day===0||day===6)wk+=t.amount;});weekendShare=wk/tE;}
     return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,weekendShare,
       bud:bud&&bud.total>0?{total:bud.total,spent:bud.spent,perDay:bud.perDay}:null,
       overCat:bud?.overCats?.[0]||null,
@@ -430,11 +456,18 @@ export default function Home() {
     sfIA("");sfIN("");sEInId(null);sShI(false);};
   // 支出は連続入力できるようモーダルを閉じない（金額・内容だけクリア）
   const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
-  const snap=(p:any,assets:any[],liabs:any[])=>{const now=new Date().toISOString().slice(0,10);const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
+  const snap=(p:any,assets:any[],liabs:any[])=>{const now=localYMD();const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
   const openAs=(a?:any)=>{if(a){sfAT(a.type);sfAA(String(a.amount));sfAN(a.note||"");sEAsId(a.id);}else{sfAT("savings");sfAA("");sfAN("");sEAsId(null);}sShA(true);};
   const openLi=(a?:any)=>{if(a){sfLT(a.type);sfLA(String(a.amount));sfLN(a.note||"");sELiId(a.id);}else{sfLT("loan_home");sfLA("");sfLN("");sELiId(null);}sShL(true);};
-  const addAs=()=>{if(!fAA)return;sD((p:any)=>{const na=[...(p.assets||[]).filter((a:any)=>a.id!==eAsId&&a.type!==fAT),{type:fAT,amount:Number(fAA),note:fAN,id:eAsId||Date.now()}];return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});showToast("✅ 資産を更新しました");sfAA("");sfAN("");sEAsId(null);sShA(false);};
-  const addLi=()=>{if(!fLA)return;sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId&&a.type!==fLT),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});showToast("✅ 負債を更新しました");sfLA("");sfLN("");sELiId(null);sShL(false);};
+  const addAs=()=>{if(!fAA)return;
+    // 編集中に種類を変えた結果、既存の同種資産を置き換えることになる場合は確認を挟む
+    const clash=(D.assets||[]).find((a:any)=>a.type===fAT&&a.id!==eAsId);
+    if(eAsId!=null&&clash&&!confirm(`同じ種類の登録（¥${clash.amount.toLocaleString()}）がすでにあります。置き換えますか？`))return;
+    sD((p:any)=>{const na=[...(p.assets||[]).filter((a:any)=>a.id!==eAsId&&a.type!==fAT),{type:fAT,amount:Number(fAA),note:fAN,id:eAsId||Date.now()}];return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});showToast("✅ 資産を更新しました");sfAA("");sfAN("");sEAsId(null);sShA(false);};
+  const addLi=()=>{if(!fLA)return;
+    const clash=(D.liabilities||[]).find((a:any)=>a.type===fLT&&a.id!==eLiId);
+    if(eLiId!=null&&clash&&!confirm(`同じ種類の登録（¥${clash.amount.toLocaleString()}）がすでにあります。置き換えますか？`))return;
+    sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId&&a.type!==fLT),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});showToast("✅ 負債を更新しました");sfLA("");sfLN("");sELiId(null);sShL(false);};
   const delAs=(id:number)=>sD((p:any)=>{const na=(p.assets||[]).filter((a:any)=>a.id!==id);return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});
   const delLi=(id:number)=>sD((p:any)=>{const nl=(p.liabilities||[]).filter((a:any)=>a.id!==id);return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});
 
@@ -449,21 +482,32 @@ export default function Home() {
         sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
       } else {
         // ── 行き先の月ごとにグループ化（自動＝取引の日付どおり / 手動＝表示中の月）──
+        // 年なし日付(MM/DD)のCSVは表示中の月から年を推定（月が2つ以上先なら前年とみなす）
+        const inferYm = (date:string) => {
+          const m = String(date||"").match(/^(\d{1,2})[\/\-]\d{1,2}/); if (!m) return null;
+          const mo = parseInt(m[1],10); if (!mo || mo > 12) return null;
+          const [cy, cmo] = cm.split("-").map(Number); const y = (mo - cmo > 1) ? cy - 1 : cy;
+          return `${y}-${String(mo).padStart(2,"0")}`;
+        };
         const groups: Record<string, any[]> = {};
         for (const t of txns) {
-          const key = (upMode==="auto" && t.ym) ? t.ym : cm;
+          const key = (upMode==="auto") ? (t.ym || inferYm(t.date) || cm) : cm;
           const { ym, ...rest } = t;
           (groups[key] = groups[key] || []).push(rest);
         }
-        // 月ごとに重複（日付・金額・内容が同じ）をスキップして追加
+        // 月ごとに重複をスキップして追加
+        // 既存件数ぶんだけスキップする方式：同ファイル内の「同日・同額・同店の正当な複数取引」は
+        // すべて追加され、同じファイルの再アップロードは全件スキップされる
         const added: Record<string, number> = {}; let dup = 0;
         const fresh: Record<string, any[]> = {};
         for (const [key, list] of Object.entries(groups)) {
-          const seen = new Set(((D.months[key]?.cardExp) || []).map((t:any)=>`${t.date}|${t.amount}|${t.description}`));
+          const cnt = new Map<string, number>();
+          (((D.months[key]?.cardExp) || []) as any[]).forEach((t:any)=>{const k=`${t.date}|${t.amount}|${t.description}`;cnt.set(k,(cnt.get(k)||0)+1);});
           for (const t of list) {
             const k = `${t.date}|${t.amount}|${t.description}`;
-            if (seen.has(k)) { dup++; continue; }
-            seen.add(k); (fresh[key] = fresh[key] || []).push(t);
+            const c = cnt.get(k) || 0;
+            if (c > 0) { cnt.set(k, c - 1); dup++; continue; }
+            (fresh[key] = fresh[key] || []).push(t);
           }
           if (fresh[key]?.length) added[key] = fresh[key].length;
         }
@@ -487,7 +531,7 @@ export default function Home() {
   };
 
   const dl=(content:BlobPart,mime:string,name:string)=>{const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);};
-  const exportData=()=>{try{dl(JSON.stringify(D,null,2),"application/json",`kakeibo-backup-${new Date().toISOString().slice(0,10)}.json`);sD((p:any)=>({...p,lastBackup:new Date().toISOString().slice(0,10)}));showToast("💾 バックアップを書き出しました");}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
+  const exportData=()=>{try{dl(JSON.stringify(D,null,2),"application/json",`kakeibo-backup-${localYMD()}.json`);sD((p:any)=>({...p,lastBackup:localYMD()}));showToast("💾 バックアップを書き出しました");}catch(e:any){alert("書き出しに失敗しました: "+e.message);}};
   // 全期間の明細をExcelで開けるCSVに（BOM付きUTF-8）
   const exportCSV=()=>{try{
     const rows:string[][]=[["月","日付","種別","内容","カテゴリ","金額"]];
@@ -496,10 +540,10 @@ export default function Home() {
       [...(v.cardExp||[]),...(v.manualExp||[])].forEach((t:any)=>rows.push([k,t.date||"",t.source==="card"?"カード":"手入力",t.description||"",t.category||"",String(t.amount)]));
     });
     const csv="\uFEFF"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
-    dl(csv,"text/csv;charset=utf-8",`kakeibo-${new Date().toISOString().slice(0,10)}.csv`);
+    dl(csv,"text/csv;charset=utf-8",`kakeibo-${localYMD()}.csv`);
     showToast("📊 CSVを書き出しました");
   }catch(e:any){alert("CSV書き出しに失敗しました: "+e.message);}};
-  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;sD({...DEF,...o,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}},cats:o.cats||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
+  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;const cur=fixCur(o);const months={...o.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...o,months,cur,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}},cats:o.cats||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
   // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
   const hCC=useCallback((tx:any,val:string)=>{
@@ -576,7 +620,8 @@ export default function Home() {
     if(q&&qAll){
       const k=kanaNorm(q);const out:any[]=[];
       Object.entries(D.months).forEach(([mk,v]:any)=>{[...(v.cardExp||[]),...(v.manualExp||[])].forEach((t:any)=>{if(kanaNorm(t.description||"").includes(k)&&(!fCat||t.category===fCat))out.push({...t,_m:mk});});});
-      out.sort((a,b)=>String(b._m+b.date).localeCompare(String(a._m+a.date)));
+      if(sortBy==="amount")out.sort((a,b)=>b.amount-a.amount);
+      else out.sort((a,b)=>String(b._m+b.date).localeCompare(String(a._m+a.date)));
       return out;
     }
     let l=allE as any[];
@@ -593,8 +638,13 @@ export default function Home() {
     const pm=D.months[prevKey];if(!pm)return;
     const fixed=(pm.manualExp||[]).filter((t:any)=>EC[t.category]?.t==="f");
     if(!fixed.length){showToast("前月に手入力の固定費がありません");return;}
-    const seen=new Set((md.manualExp||[]).map((t:any)=>`${t.description}|${t.amount}`));
-    const fresh=fixed.filter((t:any)=>!seen.has(`${t.description}|${t.amount}`)).map((t:any)=>{const dd=String(t.date||"").split("/")[1]||"01";return{...t,id:Date.now()+Math.random()*1e4,date:`${cm.slice(5)}/${dd}`};});
+    // 同じ店名がすでに今月にあればスキップ（金額を編集済みでも二重登録しない）
+    const seen=new Set((md.manualExp||[]).map((t:any)=>kanaNorm(t.description||"")));
+    const fresh=fixed.filter((t:any)=>!seen.has(kanaNorm(t.description||""))).map((t:any)=>{
+      // 日付の末尾の数字＝日として取り出し（年付き"2026/06/25"や"06-25"もOK）、月の日数に収める
+      const m=String(t.date||"").match(/(\d{1,2})\s*$/);const [y,mo]=cm.split("-").map(Number);const dim=new Date(y,mo,0).getDate();
+      const dd=String(Math.min(m?parseInt(m[1],10):1,dim)).padStart(2,"0");
+      return{...t,id:Date.now()+Math.random()*1e4,date:`${cm.slice(5)}/${dd}`};});
     if(!fresh.length){showToast("すべてコピー済みです");return;}
     if(!confirm(`前月の手入力固定費 ${fresh.length}件（${fresh.map((t:any)=>t.description).slice(0,3).join("・")}${fresh.length>3?" ほか":""}）を今月にコピーしますか？`))return;
     uM((m:any)=>({...m,manualExp:[...m.manualExp,...fresh]}));
@@ -625,15 +675,17 @@ export default function Home() {
   // 支出カレンダー（日別合計）
   const [selDay,sSelDay]=useState<number|null>(null);
   const calData=useMemo(()=>{
+    const curMo=cm?parseInt(cm.split("-")[1],10):0;
     const byDay:Record<number,{total:number,items:any[]}>={};
-    allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const d=parseInt(m[2],10);if(!d||d>31)return;const e=byDay[d]||(byDay[d]={total:0,items:[]});e.total+=t.amount;e.items.push(t);});
+    // 表示中の月と同じ月の日付のみ集計（「表示中の月へ」モードで混入した他月日付を誤ったマスに出さない）
+    allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;if(parseInt(m[1],10)!==curMo)return;const d=parseInt(m[2],10);if(!d||d>31)return;const e=byDay[d]||(byDay[d]={total:0,items:[]});e.total+=t.amount;e.items.push(t);});
     const [y,mo]=cm?cm.split("-").map(Number):[0,0];
     const dim=y?new Date(y,mo,0).getDate():30;
     const off=y?new Date(y,mo-1,1).getDay():0;
     const max=Math.max(1,...Object.values(byDay).map(v=>v.total));
     return{byDay,dim,off,max};
   },[allE,cm]);
-  useEffect(()=>{sQ("");sFCat("");sQAll(false);sEI(null);sSelDay(null);},[cm]); // 月を切り替えたら絞り込みをリセット
+  useEffect(()=>{sQ("");sFCat("");sQAll(false);sEI(null);sSelDay(null);sfED("");},[cm]); // 月を切り替えたら絞り込みと支出日付欄をリセット
 
   // 「その他」の取引だけを、最新のルール＋キーワード辞書で再仕分け
   const reCat=useCallback(()=>{
@@ -853,9 +905,9 @@ export default function Home() {
             </div>
           </div>}
 
-          {/* ── 費用の内訳 ── */}
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>固定費 vs 変動費</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={[{name:"固定費",value:fxT,color:"#3498DB"},{name:"変動費",value:tE-fxT,color:"#F39C12"}]} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={4} stroke="none" label={({name,percent}:any)=>name+" "+(percent*100).toFixed(0)+"%"}><Cell fill="#3498DB"/><Cell fill="#F39C12"/></Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer></div>
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>カテゴリ別支出</h3><ResponsiveContainer width="100%" height={Math.max(200,srt.length*28)}><BarChart data={srt.map(([c,v]:any)=>({name:(EC[c]?.i||"")+" "+c,value:v.total,color:EC[c]?.c||"#888"}))} layout="vertical" margin={{left:100,right:45,top:4,bottom:4}}><XAxis type="number" hide/><YAxis type="category" dataKey="name" width={100} tick={{fill:"#aaa",fontSize:9}} axisLine={false} tickLine={false}/><Tooltip content={<TT/>}/><Bar dataKey="value" radius={[0,4,4,0]} label={{position:"right",fill:"#888",fontSize:8,formatter:(v:number)=>"¥"+v.toLocaleString()}}>{srt.map(([c]:any,i:number)=><Cell key={i} fill={EC[c]?.c||"#888"}/>)}</Bar></BarChart></ResponsiveContainer></div>
+          {/* ── 費用の内訳（tE=0だとPieのpercentがNaNになるためガード）── */}
+          {tE>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>固定費 vs 変動費</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={[{name:"固定費",value:fxT,color:"#3498DB"},{name:"変動費",value:tE-fxT,color:"#F39C12"}]} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={4} stroke="none" label={({name,percent}:any)=>name+" "+(percent*100).toFixed(0)+"%"}><Cell fill="#3498DB"/><Cell fill="#F39C12"/></Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer></div>}
+          {tE>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>カテゴリ別支出</h3><ResponsiveContainer width="100%" height={Math.max(200,srt.length*28)}><BarChart data={srt.map(([c,v]:any)=>({name:(EC[c]?.i||"")+" "+c,value:v.total,color:EC[c]?.c||"#888"}))} layout="vertical" margin={{left:100,right:45,top:4,bottom:4}}><XAxis type="number" hide/><YAxis type="category" dataKey="name" width={100} tick={{fill:"#aaa",fontSize:9}} axisLine={false} tickLine={false}/><Tooltip content={<TT/>}/><Bar dataKey="value" radius={[0,4,4,0]} label={{position:"right",fill:"#888",fontSize:8,formatter:(v:number)=>"¥"+v.toLocaleString()}}>{srt.map(([c]:any,i:number)=><Cell key={i} fill={EC[c]?.c||"#888"}/>)}</Bar></BarChart></ResponsiveContainer></div>}
 
           {/* ── 貸借対照表 B/S ── */}
           <div style={cs()}>
