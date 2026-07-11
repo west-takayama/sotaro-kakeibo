@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // ═══ Storage ═══
 // v5: デモデータ入りのv4を破棄して全ユーザーまっさらな状態から開始
 function LD() { try { const s = localStorage.getItem("kakeibo-v5"); return s ? JSON.parse(s) : null; } catch { return null; } }
-function SV(d: any) { try { localStorage.setItem("kakeibo-v5", JSON.stringify(d)); } catch {} }
+function SV(d: any) { try { localStorage.setItem("kakeibo-v5", JSON.stringify(d)); return true; } catch { return false; } }
 
 // ═══ Categories（組み込み。ユーザー定義・上書きは D.cats とマージして使う）═══
 const ECB: Record<string, { i: string; c: string; t: string }> = {
@@ -319,7 +319,7 @@ export default function Home() {
   const [D,sD]=useState(DEF); const [pg,sPg]=useState("home"); const [rdy,sRdy]=useState(false);
   const [shI,sShI]=useState(false); const [shE,sShE]=useState(false); const [shA,sShA]=useState(false);
   const [shG,sShG]=useState(false); const [shM,sShM]=useState(false); const [shIn,sShIn]=useState(false);
-  const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null); const [shHow,sShHow]=useState(false);
+  const [shUp,sShUp]=useState(false); const [shL,sShL]=useState(false); const [eI,sEI]=useState<number|null>(null); const [shHow,sShHow]=useState(false); const [shPriv,sShPriv]=useState(false);
   const [shB,sShB]=useState(false); const [fBT,sfBT]=useState(""); const [fBC,sfBC]=useState<Record<string,string>>({});
   const [q,sQ]=useState(""); const [fCat,sFCat]=useState(""); const [sortBy,sSortBy]=useState<"date"|"amount">("date");
   const [shT,sShT]=useState(false); const [eTx,sETx]=useState<any>(null);
@@ -343,7 +343,7 @@ export default function Home() {
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
-  useEffect(()=>{if(rdy) SV(D);},[D,rdy]);
+  useEffect(()=>{if(rdy&&!SV(D)) showToast("⚠️ 保存できませんでした。端末の空き容量やプライベートモードをご確認ください");},[D,rdy,showToast]);
   // PWAショートカット（アイコン長押し）からの起動: /?p=exp|list|st
   useEffect(()=>{if(!rdy)return;const p=new URLSearchParams(window.location.search).get("p");if(!p)return;
     if(p==="exp"){sPg("home");sShE(true);}else if(p==="list")sPg("list");else if(p==="st")sPg("statement");
@@ -1070,6 +1070,20 @@ export default function Home() {
               <p style={{margin:"0 0 8px"}}><b style={{color:"#4ECDC4"}}>3. 予算と目標を決める</b><br/>ホームで月の予算を設定→「1日あと¥◯使える」が見えます。「資産」タブで純資産の目標も設定できます。</p>
               <p style={{margin:"0 0 8px"}}><b style={{color:"#FF8E53"}}>4. 決算書で振り返る</b><br/>P/L＝その月の稼ぎと使い、B/S＝今の資産と借金。月の比較・カレンダー・固定費一覧でどこを直すか探せます。</p>
               <p style={{margin:0}}><b style={{color:"#9B59B6"}}>5. 月に1回バックアップ</b><br/>データは端末内だけ。下の「書き出し」でファイル保存しておけば機種変更も安心です。</p>
+            </div>}
+          </div>
+          <div style={cs()}><button onClick={()=>sShPriv(!shPriv)} style={{background:"none",border:"none",color:"#9B59B6",fontSize:13,fontWeight:600,cursor:"pointer",padding:0,width:"100%",textAlign:"left"}}>🔒 プライバシーポリシー・免責事項 {shPriv?"▲":"▼"}</button>
+            {shPriv&&<div style={{marginTop:10,fontSize:10,color:"#aaa",lineHeight:1.9}}>
+              <p style={{margin:"0 0 8px"}}><b style={{color:"#ccc"}}>データの取り扱い</b><br/>
+              ・入力・取込されたすべてのデータ（明細・収入・資産・負債・設定）は、お使いの端末のブラウザ内（localStorage）にのみ保存されます。<br/>
+              ・開発者を含む第三者のサーバーへの送信・収集は一切行いません。アカウント登録も不要です。<br/>
+              ・Cookie・アクセス解析ツール・広告は使用していません。<br/>
+              ・サイトの配信基盤（Netlify）が標準的なアクセスログ（IPアドレス等）を記録する場合があります。<br/>
+              ・ブラウザのキャッシュ削除・端末の初期化等でデータは消去されます。「バックアップの書き出し」をご利用ください。</p>
+              <p style={{margin:0}}><b style={{color:"#ccc"}}>免責事項</b><br/>
+              ・本アプリは家計管理の参考情報を提供するものであり、集計・分類・コメントの正確性や完全性を保証するものではありません。<br/>
+              ・表示される内容は投資・税務・法律等の専門的助言ではありません。重要な判断は原資料（明細書等）をご確認ください。<br/>
+              ・本アプリの利用によって生じたいかなる損害についても、開発者は責任を負いません。自己責任でご利用ください。</p>
             </div>}
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>ℹ️ このアプリについて</h3>
