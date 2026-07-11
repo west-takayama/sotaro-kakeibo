@@ -628,6 +628,17 @@ export default function Home() {
     uM((m:any)=>({...m,incomes:(m.incomes||[]).filter((i:any)=>i.id!==inc.id)}));
     showToast("🗑 収入を削除",{label:"元に戻す",fn:()=>runUndo(()=>uM((m:any)=>({...m,incomes:[...(m.incomes||[]),inc]})))});
   };
+  // 月まるごと削除（誤取込からの復旧用）。Undoで完全復元
+  const delMonth=(key:string)=>{
+    const data=D.months[key]; if(!data) return;
+    sD((p:any)=>{
+      const months={...p.months}; delete months[key];
+      let cur=p.cur;
+      if(cur===key){const keys=Object.keys(months).sort();cur=keys[keys.length-1]||localYM();if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};}
+      return {...p,months,cur};
+    });
+    showToast(`🗑 ${key} の月を削除`,{label:"元に戻す",fn:()=>runUndo(()=>sD((p:any)=>({...p,months:{...p.months,[key]:data},cur:key})))});
+  };
   // ── カテゴリの作成・編集・削除（リネームは全データを移行）──
   const openCat=(name?:string)=>{
     if(name&&EC[name]){const c=EC[name];sECat(name);sfCN(name);sfCI(c.i);sfCCo(c.c);sfCT(c.t);}
@@ -1277,11 +1288,14 @@ export default function Home() {
       <BS open={shG} onClose={()=>sShG(false)} title="🎯 目標を設定"><FI label="目標純資産額（資産−負債）" type="amount" value={fNWA} onChange={sfNWA} placeholder="例: 10000000"/><div style={{borderTop:"1px dashed rgba(255,255,255,0.1)",margin:"4px 0 12px"}}/><FI label="年間の貯蓄目標額" type="amount" value={fGA} onChange={sfGA} placeholder="例: 1000000"/><FI label="目標名（貯蓄）" value={fGL} onChange={sfGL} placeholder="例: 旅行資金"/><button onClick={()=>{sD((p:any)=>({...p,goal:{target:Number(fGA)||0,label:fGL,nw:Number(fNWA)||0}}));sShG(false);}} style={B1}>設定</button></BS>
 
       <BS open={shM} onClose={()=>sShM(false)} title="📅 月を選択・追加">
-        {Object.keys(D.months).sort().map(k=>{const v=D.months[k];const i=(v.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);const e=[...(v.cardExp||[]),...(v.manualExp||[])].reduce((s:number,x:any)=>s+x.amount,0);const b=i-e;return(
-        <button key={k} onClick={()=>{sD((p:any)=>({...p,cur:k}));sShM(false);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",padding:"10px 12px",marginBottom:4,borderRadius:8,fontSize:13,cursor:"pointer",textAlign:"left",background:k===cm?"rgba(255,107,107,0.12)":"rgba(255,255,255,0.03)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.25)":"#333"),color:k===cm?"#FF6B6B":"#ccc"}}>
-          <span>📅 {k} {k===cm&&<span style={{fontSize:10}}>（表示中）</span>}</span>
-          <span style={{fontFamily:"monospace",fontSize:10,color:(i===0&&e===0)?"#666":b>=0?"#2ECC71":"#E74C3C"}}>{(i===0&&e===0)?"データなし":`${b>=0?"+":"−"}¥${Math.abs(b).toLocaleString()}`}</span>
-        </button>);})}
+        {Object.keys(D.months).sort().map(k=>{const v=D.months[k];const i=(v.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);const e=[...(v.cardExp||[]),...(v.manualExp||[])].reduce((s:number,x:any)=>s+x.amount,0);const b=i-e;const cnt=(v.cardExp||[]).length+(v.manualExp||[]).length;return(
+        <div key={k} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+          <button onClick={()=>{sD((p:any)=>({...p,cur:k}));sShM(false);}} style={{flex:1,display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:8,fontSize:13,cursor:"pointer",textAlign:"left",background:k===cm?"rgba(255,107,107,0.12)":"rgba(255,255,255,0.03)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.25)":"#333"),color:k===cm?"#FF6B6B":"#ccc"}}>
+            <span>📅 {k} {k===cm&&<span style={{fontSize:10}}>（表示中）</span>}</span>
+            <span style={{fontFamily:"monospace",fontSize:10,color:(i===0&&e===0)?"#666":b>=0?"#2ECC71":"#E74C3C"}}>{(i===0&&e===0)?"データなし":`${b>=0?"+":"−"}¥${Math.abs(b).toLocaleString()}`}</span>
+          </button>
+          {cnt>0&&<button onClick={()=>delMonth(k)} title="この月を削除" style={{background:"rgba(231,76,60,0.06)",border:"1px solid rgba(231,76,60,0.18)",color:"#E74C3C",borderRadius:8,padding:"9px 11px",fontSize:12,cursor:"pointer",flexShrink:0}}>🗑</button>}
+        </div>);})}
         <div style={{marginTop:12}}><FI label="新しい月（YYYY-MM）" value={fNM} onChange={sfNM} placeholder="例: 2026-04"/><button onClick={()=>{if(!fNM)return;sD((p:any)=>({...p,months:{...p.months,[fNM]:p.months[fNM]||{incomes:[],manualExp:[],cardExp:[]}},cur:fNM}));sfNM("");sShM(false);}} style={B1}>追加して切替</button></div>
       </BS>
     </div>
