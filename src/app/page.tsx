@@ -309,7 +309,7 @@ export default function Home() {
   const [shCat,sShCat]=useState(false); const [eCat,sECat]=useState<string|null>(null);
   const [fCN,sfCN]=useState(""); const [fCI,sfCI]=useState("🏷️"); const [fCCo,sfCCo]=useState("#4ECDC4"); const [fCT,sfCT]=useState("v");
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false); const [upMode,sUpMode]=useState<"auto"|"cur">("auto");
-  const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState("");
+  const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState(""); const [eInId,sEInId]=useState<number|null>(null);
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
   const [fAT,sfAT]=useState("savings"); const [fAA,sfAA]=useState(""); const [fAN,sfAN]=useState("");
   const [fLT,sfLT]=useState("loan_home"); const [fLA,sfLA]=useState(""); const [fLN,sfLN]=useState("");
@@ -419,7 +419,11 @@ export default function Home() {
 
   const uM=(fn:any)=>sD((p:any)=>({...p,months:{...p.months,[cm]:fn(p.months[cm]||{incomes:[],manualExp:[],cardExp:[]})}}));
   const shiftMonth=(dir:number)=>{if(!cm)return;const [y,m]=cm.split("-").map(Number);const d=new Date(y,(m-1)+dir,1);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;sD((p:any)=>({...p,months:{...p.months,[k]:p.months[k]||{incomes:[],manualExp:[],cardExp:[]}},cur:k}));};
-  const addI=()=>{if(!fIA||Number(fIA)<=0)return;uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:Number(fIA),note:fIN,id:Date.now()}]}));showToast(`✅ 収入 ¥${Number(fIA).toLocaleString()} を追加しました`);sfIA("");sfIN("");sShI(false);};
+  const openIn=(inc?:any)=>{if(inc){sfIT(inc.type);sfIA(String(inc.amount));sfIN(inc.note||"");sEInId(inc.id);}else{sfIT("salary");sfIA("");sfIN("");sEInId(null);}sShI(true);};
+  const addI=()=>{if(!fIA||Number(fIA)<=0)return;
+    if(eInId!=null){uM((m:any)=>({...m,incomes:m.incomes.map((i:any)=>i.id===eInId?{...i,type:fIT,amount:Number(fIA),note:fIN}:i)}));showToast("✏️ 収入を更新しました");}
+    else{uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:Number(fIA),note:fIN,id:Date.now()}]}));showToast(`✅ 収入 ¥${Number(fIA).toLocaleString()} を追加しました`);}
+    sfIA("");sfIN("");sEInId(null);sShI(false);};
   // 支出は連続入力できるようモーダルを閉じない（金額・内容だけクリア）
   const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
   const snap=(p:any,assets:any[],liabs:any[])=>{const now=new Date().toISOString().slice(0,10);const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
@@ -657,7 +661,7 @@ export default function Home() {
             <h3 style={{fontSize:13,fontWeight:700,margin:"0 0 4px",color:"#eee"}}>👋 ようこそ！3ステップで始めましょう</h3>
             <p style={{fontSize:10,color:"#999",margin:"0 0 10px"}}>データはこの端末の中だけに保存。無料・登録不要・外部送信なし。</p>
             <button onClick={()=>sShUp(true)} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(52,152,219,0.08)",border:"1px solid rgba(52,152,219,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>1️⃣ 💳 <b>カード明細（CSV/PDF）を取り込む</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>自動でカテゴリ仕分けされます</span></button>
-            <button onClick={()=>sShI(true)} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>2️⃣ 💼 <b>今月の収入を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>貯蓄率が見えるようになります</span></button>
+            <button onClick={()=>openIn()} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer",marginBottom:6}}>2️⃣ 💼 <b>今月の収入を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>貯蓄率が見えるようになります</span></button>
             <button onClick={()=>sPg("assets")} style={{display:"block",width:"100%",textAlign:"left",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.2)",color:"#ddd",padding:"10px 12px",borderRadius:10,fontSize:12,cursor:"pointer"}}>3️⃣ 💎 <b>資産・負債を登録する</b><span style={{display:"block",fontSize:10,color:"#888",marginTop:2}}>純資産と決算書(B/S)が完成します</span></button>
           </div>}
           <div style={cs({background:"linear-gradient(135deg,rgba(255,107,107,0.06),rgba(255,179,71,0.04))",borderColor:"rgba(255,107,107,0.12)",padding:16})}>
@@ -673,7 +677,7 @@ export default function Home() {
           </div>
           {badges.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{badges.map(b=><span key={b} style={{fontSize:10,fontWeight:700,color:"#FFB347",background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.25)",padding:"4px 10px",borderRadius:999}}>{b}</span>)}</div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:12}}>
-            <button onClick={()=>sShI(true)} style={{background:"rgba(46,204,113,0.03)",border:"1px dashed rgba(46,204,113,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💼</div><div style={{fontSize:10,color:"#2ECC71",fontWeight:600}}>収入</div></button>
+            <button onClick={()=>openIn()} style={{background:"rgba(46,204,113,0.03)",border:"1px dashed rgba(46,204,113,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💼</div><div style={{fontSize:10,color:"#2ECC71",fontWeight:600}}>収入</div></button>
             <button onClick={()=>sShE(true)} style={{background:"rgba(255,107,107,0.03)",border:"1px dashed rgba(255,107,107,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💸</div><div style={{fontSize:10,color:"#FF6B6B",fontWeight:600}}>支出</div></button>
             <button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.03)",border:"1px dashed rgba(52,152,219,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💳</div><div style={{fontSize:10,color:"#3498DB",fontWeight:600}}>明細取込</div></button>
           </div>
@@ -915,12 +919,12 @@ export default function Home() {
           <div style={cs({padding:"10px 14px"})}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <h3 style={{fontSize:11,fontWeight:600,margin:0,color:"#2ECC71"}}>💼 収入 <span style={{fontFamily:"monospace"}}>¥{tI.toLocaleString()}</span></h3>
-              <button onClick={()=>sShI(true)} style={{background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"3px 10px",borderRadius:5,fontSize:10,cursor:"pointer",fontWeight:600}}>＋追加</button>
+              <button onClick={()=>openIn()} style={{background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"3px 10px",borderRadius:5,fontSize:10,cursor:"pointer",fontWeight:600}}>＋追加</button>
             </div>
             {md.incomes.length>0&&<div style={{marginTop:6}}>{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(
               <div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",fontSize:11}}>
-                <span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666",fontSize:9}}>({inc.note})</span>}</span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
+                <span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666",fontSize:9}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
               </div>);})}</div>}
           </div>
           {(D.months[prevKey]?.manualExp||[]).some((t:any)=>EC[t.category]?.t==="f")&&<button onClick={copyPrevManual} style={{background:"rgba(78,205,196,0.03)",border:"1px dashed rgba(78,205,196,0.3)",color:"#4ECDC4",padding:"8px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginBottom:8,fontWeight:600}}>↩️ 前月の手入力固定費（家賃など）を今月にコピー</button>}
@@ -999,7 +1003,7 @@ export default function Home() {
                 </div>))}
             </div>
           </div>}
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span style={{color:"#ccc"}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>}</span><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontFamily:"monospace",color:t.c,fontWeight:600}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
             <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
@@ -1029,7 +1033,7 @@ export default function Home() {
       </div>
 
       {/* Modals */}
-      <BS open={shI} onClose={()=>sShI(false)} title="💼 収入を追加"><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>追加</button></BS>
+      <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
 
       <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加">
         <div style={{marginBottom:12}}>
