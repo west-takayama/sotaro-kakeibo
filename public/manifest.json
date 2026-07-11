@@ -15,5 +15,11 @@
     { "name": "支出を追加", "url": "/?p=exp", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
     { "name": "明細を見る", "url": "/?p=list", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
     { "name": "決算書", "url": "/?p=st", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
-  ]
+  ],
+  "screenshots": [
+    { "src": "/screenshot-home.png", "sizes": "1080x2160", "type": "image/png", "form_factor": "narrow", "label": "ホーム：収支・予算・純資産・コメント" },
+    { "src": "/screenshot-statement.png", "sizes": "1080x2160", "type": "image/png", "form_factor": "narrow", "label": "決算書：P/L・B/S・月比較" }
+  ],
+  "categories": ["finance", "productivity", "lifestyle"],
+  "lang": "ja"
 }
