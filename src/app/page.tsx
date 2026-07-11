@@ -357,8 +357,9 @@ export default function Home() {
   const [q,sQ]=useState(""); const [fCat,sFCat]=useState(""); const [sortBy,sSortBy]=useState<"date"|"amount">("date");
   const [shT,sShT]=useState(false); const [eTx,sETx]=useState<any>(null);
   const [fTD,sfTD]=useState(""); const [fTN,sfTN]=useState(""); const [fTA,sfTA]=useState(""); const [fTC,sfTC]=useState("その他");
-  const [toast,sToast]=useState<string|null>(null); const toastT=useRef<any>(null);
-  const showToast=useCallback((msg:string)=>{sToast(msg);clearTimeout(toastT.current);toastT.current=setTimeout(()=>sToast(null),2200);},[]);
+  const [toast,sToast]=useState<{msg:string;action?:{label:string;fn:()=>void}}|null>(null); const toastT=useRef<any>(null);
+  const showToast=useCallback((msg:string,action?:{label:string;fn:()=>void})=>{sToast({msg,action});clearTimeout(toastT.current);toastT.current=setTimeout(()=>sToast(null),action?5000:2200);},[]);
+  const runUndo=useCallback((fn:()=>void)=>{fn();clearTimeout(toastT.current);sToast({msg:"↩️ 元に戻しました"});toastT.current=setTimeout(()=>sToast(null),1600);},[]);
   // 日またぎ・アプリ復帰時に「今日」を更新（予算の残り日数/1日ペースを最新に保つ）
   const [dayKey,sDayKey]=useState("");
   useEffect(()=>{const u=()=>sDayKey(new Date().toDateString());u();window.addEventListener("focus",u);document.addEventListener("visibilitychange",u);return()=>{window.removeEventListener("focus",u);document.removeEventListener("visibilitychange",u);};},[]);
@@ -617,9 +618,15 @@ export default function Home() {
   };
   const delTx=(t:any)=>{
     if(!t) return;
-    if(!confirm(`「${t.description}」¥${t.amount.toLocaleString()} を削除しますか？`)) return;
-    uM((m:any)=>t.source==="card"?{...m,cardExp:(m.cardExp||[]).filter((x:any)=>x.id!==t.id)}:{...m,manualExp:(m.manualExp||[]).filter((x:any)=>x.id!==t.id)});
+    const src=t.source==="card"?"cardExp":"manualExp";
+    uM((m:any)=>({...m,[src]:(m[src]||[]).filter((x:any)=>x.id!==t.id)}));
     sShT(false); sETx(null);
+    showToast(`🗑 「${t.description}」を削除`,{label:"元に戻す",fn:()=>runUndo(()=>uM((m:any)=>({...m,[src]:[...(m[src]||[]),t]})))});
+  };
+  const delIn=(inc:any)=>{
+    if(!inc) return;
+    uM((m:any)=>({...m,incomes:(m.incomes||[]).filter((i:any)=>i.id!==inc.id)}));
+    showToast("🗑 収入を削除",{label:"元に戻す",fn:()=>runUndo(()=>uM((m:any)=>({...m,incomes:[...(m.incomes||[]),inc]})))});
   };
   // ── カテゴリの作成・編集・削除（リネームは全データを移行）──
   const openCat=(name?:string)=>{
@@ -1049,7 +1056,7 @@ export default function Home() {
             {md.incomes.length>0&&<div style={{marginTop:6}}>{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(
               <div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",fontSize:11}}>
                 <span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666",fontSize:9}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
               </div>);})}</div>}
           </div>
           {(D.months[prevKey]?.manualExp||[]).some((t:any)=>EC[t.category]?.t==="f")&&<button onClick={copyPrevManual} style={{background:"rgba(78,205,196,0.03)",border:"1px dashed rgba(78,205,196,0.3)",color:"#4ECDC4",padding:"8px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginBottom:8,fontWeight:600}}>↩️ 前月の手入力固定費（家賃など）を今月にコピー</button>}
@@ -1128,7 +1135,7 @@ export default function Home() {
                 </div>))}
             </div>
           </div>}
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>uM((m:any)=>({...m,incomes:m.incomes.filter((i:any)=>i.id!==inc.id)}))} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
             <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
@@ -1164,7 +1171,10 @@ export default function Home() {
       </div>
 
       {/* Toast */}
-      {toast&&<div style={{position:"fixed",bottom:76,left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"9px 18px",borderRadius:999,fontSize:12,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",whiteSpace:"nowrap",maxWidth:"90vw",overflow:"hidden",textOverflow:"ellipsis"}}>{toast}</div>}
+      {toast&&<div style={{position:"fixed",bottom:76,left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"9px 14px 9px 18px",borderRadius:999,fontSize:12,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",maxWidth:"92vw",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{toast.msg}</span>
+        {toast.action&&<button onClick={toast.action.fn} style={{background:"rgba(255,179,71,0.15)",border:"1px solid rgba(255,179,71,0.4)",color:"#FFB347",padding:"4px 12px",borderRadius:999,fontSize:11,cursor:"pointer",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{toast.action.label}</button>}
+      </div>}
 
       {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f0f22",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",paddingBottom:"env(safe-area-inset-bottom,0px)",zIndex:50}}>
@@ -1181,7 +1191,12 @@ export default function Home() {
             {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"6px 10px",borderRadius:999,fontSize:10,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(fEC===c?v.c+"66":"#333"),color:fEC===c?v.c:"#aaa",fontWeight:fEC===c?700:400}}>{v.i}{c}</button>)}
           </div>
         </div>
-        <FI label="金額" type="amount" value={fEA} onChange={sfEA}/><FI label="日付（空欄で今日）" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/>
+        <FI label="金額" type="amount" value={fEA} onChange={sfEA}/>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,margin:"-4px 0 12px"}}>
+          {[100,500,1000,5000].map(a=><button key={a} onClick={()=>sfEA(String((Number(fEA)||0)+a))} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#bbb",fontFamily:"monospace"}}>+¥{a.toLocaleString()}</button>)}
+          {fEA&&<button onClick={()=>sfEA("")} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C"}}>クリア</button>}
+        </div>
+        <FI label="日付（空欄で今日）" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/>
         <button onClick={addE} style={B1}>追加（連続入力OK）</button>
         <button onClick={()=>sShE(false)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#999",padding:"9px 0",borderRadius:10,fontSize:12,cursor:"pointer",width:"100%",marginTop:8}}>閉じる</button>
       </BS>
