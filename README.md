@@ -1,31 +1,27 @@
 # 💰 マイ家計簿 ＆ 資産管理
 
-家計簿（収支）と資産管理（資産・負債・純資産）を、会社の決算書のように
-**自分専用のP/L（損益計算書）とB/S（貸借対照表）** で見える化する資産管理アプリ。
+カード明細（PDF/CSV）を自動仕分けし、会社の決算書のように
+**自分専用のP/L（損益計算書）とB/S（貸借対照表）** で家計を見える化する、
+無料の家計簿・資産管理アプリ（PWA）。
 
-## 🚀 Netlify デプロイ手順（3ステップ）
+> 💸 **完全無料・広告なし・登録不要**：すべての計算・仕分け・コメント生成は
+> 端末内（ブラウザ）で完結します。外部APIや有料サービスは一切使わず、
+> データは端末の localStorage にのみ保存されます（外部送信なし）。
 
-### ステップ1: GitHubにアップ
-1. GitHub で新しいリポジトリを作成（Private推奨）
-2. このフォルダの中身を全部アップロード
+## 📲 使いはじめる
+1. アプリのURLをスマホで開く
+2. ホーム画面に追加（**iPhone**: Safari→共有→ホーム画面に追加 / **Android**: Chrome→⋮→ホーム画面に追加）
+3. あとはアプリ内の「👋 3ステップガイド」に沿って明細を取り込むだけ
 
-### ステップ2: Netlifyに接続
-1. [app.netlify.com](https://app.netlify.com) にログイン
-2. 「Add new site」→「Import an existing project」
-3. 「GitHub」を選択 → `kakeibo-app` リポジトリを選択
-4. Build settings は自動検出されます。されない場合：
-   - Build command: `npm run build`
-   - Publish directory: `.next`
-5. 「Deploy site」をクリック
-6. 1〜2分で完了！URLが発行されます
+## 🔒 プライバシー
+- 入力・取込した家計データはすべて端末内のみ。開発者を含む第三者に送信されません
+- Cookie・アクセス解析・広告なし。詳細はアプリ内「設定 → プライバシーポリシー・免責事項」
 
-### ステップ3: スマホでホーム画面に追加
-- **iPhone**: Safari → 共有（□↑）→ ホーム画面に追加
-- **Android**: Chrome → ⋮ → ホーム画面に追加
-
-> 💸 **完全無料・APIキー不要**：すべての計算・アドバイスは端末内（ブラウザ）で
-> 完結します。外部APIや有料サービスは一切使いません。データはこの端末の
-> localStorage に保存されます。
+## 🛠 セルフホストする場合（Netlify）
+1. このリポジトリをフォーク/アップロード（Private推奨）
+2. [app.netlify.com](https://app.netlify.com) → Add new site → Import an existing project → リポジトリを選択
+3. Build command: `npm run build` / Publish directory: `.next`（自動検出されます）
+4. Deploy site → 1〜2分でURLが発行されます（無料枠で運用可能）
 
 ## 機能一覧
 - 📑 **マイ決算書**：自分専用の損益計算書(P/L)＋貸借対照表(B/S)を自動生成
