@@ -44,6 +44,33 @@
 - 💾 データのバックアップ（JSON）＋明細のCSV書き出し（Excel用）
 - 📲 PWA対応（ホーム画面追加で独立起動・専用アイコン付き）
 
+## 💰 マネタイズ運用ガイド（開発者向け）
+アプリ本体は「広告なし・全機能無料・端末内完結」のまま、次の3つの収益枠が組み込まれています。
+リンクはすべて `src/app/page.tsx` の `MONET` オブジェクトで一元管理され、**空文字のままだと該当ボタンは表示されません**。
+
+### 1. 応援プラン（買い切り ¥480 目安）
+1. [Stripe Payment Links](https://stripe.com/jp/payments/payment-links)（手数料3.6%）か [BOOTH](https://booth.pm)・[note](https://note.com) などでデジタル商品として販売ページを作る
+2. 販売ページURLを `MONET.pro` に設定
+3. 購入者へライセンスコードを送付（購入完了メール・BOOTHのダウンロードファイル等）
+4. コード生成（Nodeで実行。何個でも生成可）:
+```js
+const gen=()=>{const cs="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";for(;;){let c="";for(let i=0;i<8;i++)c+=cs[Math.floor(Math.random()*cs.length)];if(c.split("").reduce((a,ch)=>(a*31+ch.charCodeAt(0))%9973,7)===777)return`MK-${c.slice(0,4)}-${c.slice(4)}`;}};
+console.log(Array.from({length:10},gen));
+```
+※ 検証は端末内のみの簡易チェックです（応援目的の性善説モデル。厳密なDRMではありません）
+
+### 2. 寄付（Ko-fi / OFUSE）
+[Ko-fi](https://ko-fi.com)（手数料0%）か [OFUSE](https://ofuse.me) でアカウントを作り、URLを `MONET.support` に設定。
+
+### 3. 節約ヒントのアフィリエイト枠（最も期待値が高い）
+決算書タブの「💡 節約のヒント」は、ユーザーの固定費（通信費・光熱費・保険・サブスク）から端末内で提案を自動生成します。
+[A8.net](https://www.a8.net) や [もしもアフィリエイト](https://af.moshimo.com) で下記ジャンルの案件と提携し、URLを設定：
+- `MONET.aff.sim` — 格安SIM（報酬相場 3,000〜10,000円/件）
+- `MONET.aff.energy` — 電力・ガス切り替え（5,000〜15,000円/件）
+- `MONET.aff.insurance` — 保険相談（5,000〜15,000円/件）
+
+リンクには「PR」表記が自動で付きます（景表法ステマ規制対応）。提案の計算はすべて端末内で行われ、データは外部に出ないため、プライバシーポリシーとの矛盾はありません。
+
 ## 📑 決算書の見方
 - **損益計算書（P/L）**：その期間に「いくら稼ぎ・いくら使い・いくら残ったか」（収益／費用／当期純利益）
 - **貸借対照表（B/S）**：今この瞬間に「いくら持ち・いくら借りているか」（資産＝負債＋純資産）

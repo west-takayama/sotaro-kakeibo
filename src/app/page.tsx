@@ -354,6 +354,22 @@ function SR({l,v,c,bold,sub,sm,signed}:any){
 const cs = (s:any={}) => ({background:"rgba(255,255,255,0.035)",borderRadius:14,padding:14,border:"1px solid rgba(255,255,255,0.06)",marginBottom:12,...s});
 const B1:React.CSSProperties = {background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",border:"none",color:"#fff",padding:"12px 0",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",width:"100%",fontFamily:"inherit"};
 
+// ═══ マネタイズ設定（リンクはすべてここで差し替える）═══
+// support: 寄付ページ(Ko-fi/OFUSE等) / pro: 応援プラン購入ページ(Stripe Payment Link/BOOTH等)
+// 空文字のままだと該当ボタンは表示されない（リンク切れを出さないため）。設定手順は README「💰 マネタイズ運用ガイド」
+const MONET = {
+  support: "",  // 例: "https://ko-fi.com/xxxx"
+  pro: "",      // 例: "https://buy.stripe.com/xxxx"（購入者にライセンスコードを送付する運用）
+  proPrice: "¥480（買い切り）",
+  aff: { sim: "", energy: "", insurance: "" },  // 節約ヒントのアフィリエイトURL枠（A8.net/もしも等）
+};
+// 応援プランのライセンスコード検証（端末内で完結・サーバー不要。コード生成はREADME参照）
+function checkProCode(raw: string): boolean {
+  const m = raw.trim().toUpperCase().replace(/\s/g, "").match(/^MK-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
+  if (!m) return false;
+  return (m[1] + m[2]).split("").reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7) === 777;
+}
+
 // ═══ MAIN ═══
 export default function Home() {
   const [D,sD]=useState(DEF); const [pg,sPg]=useState("home"); const [rdy,sRdy]=useState(false);
@@ -382,6 +398,22 @@ export default function Home() {
   const [fLT,sfLT]=useState("loan_home"); const [fLA,sfLA]=useState(""); const [fLN,sfLN]=useState("");
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
+  // ═══ 応援プラン(Pro)・節約ヒント ═══
+  const [pro,sPro]=useState(false); const [fPC,sfPC]=useState("");
+  const [hintsOff,sHintsOff]=useState<Record<string,1>>({});
+  useEffect(()=>{try{sPro(localStorage.getItem("kakeibo-pro")==="1");sHintsOff(JSON.parse(localStorage.getItem("kakeibo-hints-off")||"{}"));}catch{}},[]);
+  const dismissHint=useCallback((id:string)=>{sHintsOff(p=>{const n={...p,[id]:1 as 1};try{localStorage.setItem("kakeibo-hints-off",JSON.stringify(n));}catch{} return n;});},[]);
+  const applyProCode=()=>{
+    if(checkProCode(fPC)){try{localStorage.setItem("kakeibo-pro","1");}catch{} sPro(true);sfPC("");showToast("💎 応援プランが有効になりました。ありがとうございます！");}
+    else showToast("⚠️ コードが正しくありません（形式: MK-XXXX-XXXX）");
+  };
+  // 友だちに教える（Web Share API → 非対応ならクリップボード）
+  const shareApp=async()=>{
+    const url=location.origin;
+    const text="広告なし・登録不要・データは端末の中だけの無料家計簿「マイ決算書」。カード明細(CSV/PDF)を入れるだけで自分専用の決算書(P/L・B/S)ができます";
+    if(navigator.share){try{await navigator.share({title:"マイ決算書",text,url});}catch{} return;}
+    try{await navigator.clipboard.writeText(text+" "+url);showToast("📋 紹介文をコピーしました。SNSやLINEに貼り付けて共有できます");}catch{showToast("⚠️ コピーできませんでした");}
+  };
 
   useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy&&!SV(D)) showToast("⚠️ 保存できませんでした。端末の空き容量やプライベートモードをご確認ください");},[D,rdy,showToast]);
@@ -795,6 +827,18 @@ export default function Home() {
     return Object.values(map).sort((a,b)=>b.total-a.total);
   },[allE]);
   const fixedSum=useMemo(()=>fixedList.reduce((s,x)=>s+x.total,0),[fixedList]);
+  // 節約のヒント（端末内の固定費データだけから生成。外部送信なし。リンクはMONET.affのアフィリエイト枠）
+  const saveHints=useMemo(()=>{
+    const byCat:Record<string,number>={};
+    fixedList.forEach(f=>{byCat[f.cat]=(byCat[f.cat]||0)+f.total;});
+    const h:{id:string,i:string,tx:string,save:number,url:string,label:string}[]=[];
+    if((byCat["通信費"]||0)>=5000)h.push({id:"sim",i:"📱",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}。格安SIM（月3GBで¥1,000前後）に替えると`,save:Math.max(0,byCat["通信費"]-2000)*12,url:MONET.aff.sim,label:"格安SIMを比較する"});
+    if((byCat["光熱費"]||0)>=13000)h.push({id:"energy",i:"💡",tx:`光熱費が月¥${byCat["光熱費"].toLocaleString()}。電力・ガス会社の見直しで5〜10%下がる例が多く`,save:Math.round(byCat["光熱費"]*0.07)*12,url:MONET.aff.energy,label:"料金プランを比較する"});
+    if((byCat["保険"]||0)>=10000)h.push({id:"ins",i:"🛡️",tx:`保険が月¥${byCat["保険"].toLocaleString()}。保障の重複を年1回見直すと`,save:Math.round(byCat["保険"]*0.2)*12,url:MONET.aff.insurance,label:"保険を見直す"});
+    const subs=fixedList.filter(f=>f.cat==="サブスク");
+    if(subs.length>=3){const st=subs.reduce((s,x)=>s+x.total,0);h.push({id:"subs",i:"🔄",tx:`サブスクが${subs.length}件で月¥${st.toLocaleString()}。使っていないものを1つ解約するだけで`,save:Math.round(st/subs.length)*12,url:"",label:""});}
+    return h.filter(x=>!hintsOff[x.id]);
+  },[fixedList,hintsOff]);
   // 支出カレンダー（日別合計）
   const [selDay,sSelDay]=useState<number|null>(null);
   const calData=useMemo(()=>{
@@ -829,7 +873,7 @@ export default function Home() {
 
         {pg==="home"&&(<div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書</h1>
+            <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:12,marginLeft:4}}>💎</span>}</h1>
             <div style={{display:"flex",gap:4,alignItems:"center"}}>
               <button aria-label="前の月へ" onClick={()=>shiftMonth(-1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>‹</button>
               <button onClick={()=>sShM(true)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 10px",borderRadius:8,fontSize:12,cursor:"pointer"}}>📅 {cm}</button>
@@ -1051,6 +1095,21 @@ export default function Home() {
             </div>
           </div>}
 
+          {/* ── 節約のヒント（固定費からの自動提案・アフィリエイト枠つき）── */}
+          {saveHints.length>0&&<div style={cs({borderColor:"rgba(255,179,71,0.2)"})}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#FFB347"}}>💡 節約のヒント</h3>
+            <p style={{fontSize:9,color:"#666",margin:"0 0 6px"}}>あなたの固定費から端末内で自動計算した提案です（外部送信なし）</p>
+            {saveHints.map(h=>(
+              <div key={h.id} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                <span style={{fontSize:14,flexShrink:0}}>{h.i}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontSize:11,color:"#ccc",margin:0,lineHeight:1.6}}>{h.tx}<b style={{color:"#2ECC71"}}>年 約¥{h.save.toLocaleString()}の節約余地</b>。</p>
+                  {h.url&&<a href={h.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:4,fontSize:10,color:"#FFB347",fontWeight:600,textDecoration:"none"}}>{h.label} →<span style={{fontSize:8,color:"#777",marginLeft:5,border:"1px solid #444",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
+                </div>
+                <button aria-label="このヒントを非表示" onClick={()=>dismissHint(h.id)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0,fontSize:12,flexShrink:0}}>×</button>
+              </div>))}
+          </div>}
+
           {/* ── 費用の内訳（tE=0だとPieのpercentがNaNになるためガード）── */}
           {tE>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>固定費 vs 変動費</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={[{name:"固定費",value:fxT,color:"#3498DB"},{name:"変動費",value:tE-fxT,color:"#F39C12"}]} cx="50%" cy="50%" innerRadius={42} outerRadius={68} dataKey="value" paddingAngle={4} stroke="none" label={({name,percent}:any)=>name+" "+(percent*100).toFixed(0)+"%"}><Cell fill="#3498DB"/><Cell fill="#F39C12"/></Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer></div>}
           {tE>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>カテゴリ別支出</h3><ResponsiveContainer width="100%" height={Math.max(200,srt.length*28)}><BarChart data={srt.map(([c,v]:any)=>({name:(EC[c]?.i||"")+" "+c,value:v.total,color:EC[c]?.c||"#888"}))} layout="vertical" margin={{left:100,right:45,top:4,bottom:4}}><XAxis type="number" hide/><YAxis type="category" dataKey="name" width={100} tick={{fill:"#aaa",fontSize:9}} axisLine={false} tickLine={false}/><Tooltip content={<TT/>}/><Bar dataKey="value" radius={[0,4,4,0]} label={{position:"right",fill:"#888",fontSize:8,formatter:(v:number)=>"¥"+v.toLocaleString()}}>{srt.map(([c]:any,i:number)=><Cell key={i} fill={EC[c]?.c||"#888"}/>)}</Bar></BarChart></ResponsiveContainer></div>}
@@ -1252,6 +1311,24 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>ℹ️ このアプリについて</h3>
             <p style={{fontSize:11,color:"#999",margin:0,lineHeight:1.8}}>💰 マイ決算書 — <b style={{color:"#bbb"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
             <span style={{color:"#777"}}>困ったとき：データが消えた→「バックアップの読み込み」で復元 ／ 仕分けが違う→明細でカテゴリをタップして修正（自動で学習）／ カテゴリを増やしたい→上の「カテゴリの管理」</span></p>
+          </div>
+          <div style={cs({borderColor:"rgba(255,179,71,0.25)",background:"linear-gradient(135deg,rgba(255,179,71,0.05),rgba(255,107,107,0.03))"})}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#FFB347"}}>{pro?"💎 応援プラン（有効）":"☕ このアプリを応援する"}</h3>
+            {pro?<p style={{fontSize:11,color:"#bbb",margin:0,lineHeight:1.7}}>応援ありがとうございます！ホームにサポーターバッジ💎が表示されています。今後の新機能（クラウド同期など）を優先してお届けします。</p>
+            :<>
+              <p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.7}}>マイ決算書は<b style={{color:"#ccc"}}>広告なし・全機能無料</b>のまま開発を続けます。役に立ったら、応援プラン{MONET.proPrice}で開発を支えてもらえると嬉しいです（💎サポーターバッジ＋今後の新機能を優先提供）。</p>
+              {MONET.pro&&<button onClick={()=>window.open(MONET.pro,"_blank")} style={{background:"linear-gradient(135deg,#FFB347,#FF8E53)",border:"none",color:"#1a1a2e",padding:"10px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:700,marginBottom:6}}>💎 応援プランを購入 {MONET.proPrice}</button>}
+              {MONET.support&&<button onClick={()=>window.open(MONET.support,"_blank")} style={{background:"rgba(255,179,71,0.12)",border:"1px solid rgba(255,179,71,0.3)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600,marginBottom:6}}>☕ 寄付で応援する</button>}
+              <div style={{display:"flex",gap:6,marginTop:2}}>
+                <input value={fPC} onChange={(e)=>sfPC(e.target.value)} placeholder="ライセンスコード（MK-XXXX-XXXX）" style={{flex:1,boxSizing:"border-box",padding:"8px 10px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:8,color:"#eee",fontSize:11,outline:"none",fontFamily:"monospace"}}/>
+                <button onClick={applyProCode} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #444",color:"#ccc",padding:"8px 14px",borderRadius:8,fontSize:11,cursor:"pointer",fontWeight:600,flexShrink:0}}>適用</button>
+              </div>
+            </>}
+          </div>
+          <div style={cs()}>
+            <h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#4ECDC4"}}>📣 友だちに教える</h3>
+            <p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>このアプリはみんなに使ってもらえるほど開発が続きます。役に立ったらぜひ紹介してください。</p>
+            <button onClick={shareApp} style={{background:"rgba(78,205,196,0.1)",border:"1px solid rgba(78,205,196,0.25)",color:"#4ECDC4",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📤 紹介文をシェア / コピー</button>
           </div>
           <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(freshState());}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
         </div>)}
