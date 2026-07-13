@@ -100,36 +100,92 @@ function splitCsvLine(line: string): string[] {
   out.push(cur);
   return out.map(f => f.trim());
 }
+// 各社の日付表記を {ym, md} に正規化
+// 対応: 2026/6/5・2026-6-5・2026.6.5・20260605(8桁)・2026年6月5日・6/5（年なし）
+function parseDateTok(s: string): { ym: string|null; md: string } | null {
+  const t = s.trim();
+  let m = t.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/);
+  if (m && +m[2]>=1 && +m[2]<=12 && +m[3]>=1 && +m[3]<=31)
+    return { ym: m[1]+"-"+m[2].padStart(2,"0"), md: m[2].padStart(2,"0")+"/"+m[3].padStart(2,"0") };
+  m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m && +m[2]>=1 && +m[2]<=12 && +m[3]>=1 && +m[3]<=31)
+    return { ym: m[1]+"-"+m[2], md: m[2]+"/"+m[3] };
+  m = t.match(/^(\d{1,2})[\/\-.月](\d{1,2})日?$/);
+  if (m && +m[1]>=1 && +m[1]<=12 && +m[2]>=1 && +m[2]<=31)
+    return { ym: null, md: String(+m[1]).padStart(2,"0")+"/"+String(+m[2]).padStart(2,"0") };
+  return null;
+}
+// 金額トークン→数値（¥・カンマ・円・全角マイナス▲△−対応。金額らしくなければnull）
+function parseAmtTok(s: string): number | null {
+  const c = s.replace(/[¥￥,、円\s"]/g, "").replace(/[▲△−ー]/g, "-");
+  if (!/^-?\d+$/.test(c)) return null;
+  const n = Math.abs(parseInt(c, 10));
+  return n >= 10 ? n : null;
+}
+// 集計行（合計・ご請求・繰越など）は取引ではないのでスキップ
+const SUM_ROW = /^(お?支払い?|ご?請求|ご?利用)?(合|小|総)計|^前回|^繰越|^残高|^今回の?お?支払/;
+
+// ═══ CSVヘッダーの列マッピング（主要カード各社の明細CSVに対応）═══
+// 楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPay・オリコ・ビュー等のヘッダー語彙
+const H_DATE = ["利用日","ご利用日","利用年月日","ご利用年月日","ご利用日付","取引日","日付"];
+const H_DESC = ["利用店名・商品名","利用店名","ご利用店名","加盟店名","ご利用先など","ご利用先","利用先","ご利用場所","利用店舗","ご利用内容","摘要","内容","品名"];
+const H_AMT  = ["利用金額","ご利用金額","利用額","ご利用額","取引金額","金額"];           // 実際に使った額を最優先
+const H_AMT2 = ["支払金額","お支払金額","お支払い金額","支払総額","ご請求額","請求額"];   // 利用金額列がないカード用
+function findCol(header: string[], keys: string[]): number {
+  for (const k of keys) { const i = header.findIndex(h => h === k); if (i >= 0) return i; }       // 完全一致
+  for (const k of keys) { const i = header.findIndex(h => h.includes(k)); if (i >= 0) return i; } // 「ご利用金額(円)」等の表記ゆれ
+  return -1;
+}
+
 function parseCSV(text: string, rules?: Record<string, string>): any[] {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const txns: any[] = [];
+  // ① ヘッダー行を先頭10行から探して列を確定（各社CSVを正確に読む本命ルート）
+  let hRow = -1, cDate = -1, cDesc = -1, cAmt = -1;
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const h = splitCsvLine(lines[i]);
+    const d = findCol(h, H_DATE), s = findCol(h, H_DESC);
+    let a = findCol(h, H_AMT); if (a < 0) a = findCol(h, H_AMT2);
+    if (d >= 0 && s >= 0 && a >= 0) { hRow = i; cDate = d; cDesc = s; cAmt = a; break; }
+  }
+  if (hRow >= 0) {
+    for (let i = hRow + 1; i < lines.length; i++) {
+      const f = splitCsvLine(lines[i]);
+      const dt = parseDateTok(f[cDate] || "");
+      const amount = parseAmtTok(f[cAmt] || "");
+      const desc = (f[cDesc] || "").trim();
+      if (!dt || !amount || !desc || SUM_ROW.test(desc)) continue;
+      txns.push({ id: Date.now()+Math.random()*1e4, date: dt.md, description: desc, amount, category: autoCategory(desc, rules), source:"card", ym: dt.ym });
+    }
+    if (txns.length) return txns;
+  }
+  // ② ヘッダーがないCSV用のフォールバック（日付らしい列＋右端の金額らしい列＋最長の文字列）
   for (const line of lines) {
     const fields = splitCsvLine(line).filter(Boolean);
     if (fields.length < 2) continue;
-    let date: string|null = null, amount: number|null = null;
-    for (const f of fields) {
-      if (!date && /\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(f)) date = f;
-      else if (!date && /^\d{1,2}[\/\-]\d{1,2}$/.test(f)) date = f;
-    }
-    for (let i = fields.length-1; i >= 0; i--) {
-      const c = fields[i].replace(/[¥￥,、円\s]/g,"").replace(/▲|△|−/g,"-");
-      if (/^-?\d{2,}$/.test(c) && Math.abs(parseInt(c))>=10) { amount = Math.abs(parseInt(c)); break; }
-    }
-    if (date && amount) {
+    let dt: { ym: string|null; md: string } | null = null, amount: number|null = null;
+    for (const f of fields) { if (!dt) dt = parseDateTok(f); }
+    for (let i = fields.length-1; i >= 0; i--) { const a = parseAmtTok(fields[i]); if (a) { amount = a; break; } }
+    if (dt && amount) {
       let desc = "";
       for (const f of fields) {
-        if (f.includes(date)) continue;
-        const c = f.replace(/[¥￥,、円\s]/g,"");
-        if (/^-?\d+$/.test(c) && Math.abs(parseInt(c))===amount) continue;
+        if (parseDateTok(f)) continue;
+        if (parseAmtTok(f) === amount) continue;
         if (f.length > desc.length) desc = f;
       }
-      // 年付きの日付なら所属月(YYYY-MM)を持たせる（アップロード時の自動振り分けに使用）
-      const fm = date.match(/(\d{4})[\/\-](\d{1,2})[\/\-]\d{1,2}/);
-      const ym = fm ? fm[1]+"-"+fm[2].padStart(2,"0") : null;
-      txns.push({ id: Date.now()+Math.random()*1e4, date: date.length>5?date.slice(5):date, description: desc||"不明", amount, category: autoCategory(desc, rules), source:"card", ym });
+      if (SUM_ROW.test(desc)) continue;
+      txns.push({ id: Date.now()+Math.random()*1e4, date: dt.md, description: desc||"不明", amount, category: autoCategory(desc, rules), source:"card", ym: dt.ym });
     }
   }
   return txns;
+}
+
+// 文字コード自動判定つきテキスト読み込み
+// 楽天・PayPay等はUTF-8、三井住友・JCB・イオン・dカード・セゾン等のCSVはShift_JISが多い
+async function readTextAuto(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }  // 不正バイトがあれば例外→SJISへ
+  catch { try { return new TextDecoder("shift_jis").decode(buf); } catch { return new TextDecoder().decode(buf); } }
 }
 
 // ═══ PDF Text Extraction (ブラウザ内・pdf.js / 無料・APIなし) ═══
@@ -164,7 +220,8 @@ async function extractPdfText(file: File): Promise<string> {
   return lines.join("\n");
 }
 
-// ═══ カード明細PDFの行を解析（日付 店名 利用者 支払方法 利用金額 …の表形式に対応）═══
+// ═══ カード明細PDFの行を解析 ═══
+// ①楽天型「日付 店名 利用者 支払方法 利用金額 …」の表形式 → ②汎用「日付 店名 … 金額」の順で試す
 function parsePdfStatement(text: string, rules?: Record<string, string>): any[] {
   const txns: any[] = [];
   const dateRe = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
@@ -177,14 +234,28 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
     let payIdx = -1;
     for (let i = 2; i < toks.length; i++) { if (/払い|リボ|分割|ボーナス/.test(toks[i])) { payIdx = i; break; } }
     if (payIdx < 0 || payIdx + 1 >= toks.length) continue;
-    const amtTok = toks[payIdx + 1].replace(/[¥￥,、円\s]/g, "").replace(/[▲△−]/g, "-");
-    if (!/^-?\d+$/.test(amtTok)) continue;
-    const amount = Math.abs(parseInt(amtTok, 10));
+    const amount = parseAmtTok(toks[payIdx + 1]);
     if (!amount) continue;
     const store = (toks.slice(1, Math.max(2, payIdx - 1)).join(" ") || toks[1]).normalize("NFKC");
+    if (SUM_ROW.test(store)) continue;
     const date = dm[2].padStart(2, "0") + "/" + dm[3].padStart(2, "0");
     const ym = dm[1] + "-" + dm[2].padStart(2, "0"); // 所属月（自動振り分け用）
     txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store, rules), source: "card", ym });
+  }
+  if (txns.length) return txns;
+  // ② 汎用: 行頭が日付・行内の右端に金額・間が店名（三井住友/JCB/イオン等のWeb明細PDFはこの並びが多い）
+  for (const raw of text.split("\n")) {
+    const toks = raw.trim().split(/[\s\t]+/).filter(Boolean);
+    if (toks.length < 3) continue;
+    const dt = parseDateTok(toks[0]);
+    if (!dt) continue;
+    let amtIdx = -1, amount: number | null = null;
+    for (let i = toks.length - 1; i >= 1; i--) { const a = parseAmtTok(toks[i]); if (a) { amtIdx = i; amount = a; break; } }
+    if (!amount || amtIdx < 2) continue; // 日付と金額の間に店名が必要
+    const store = toks.slice(1, amtIdx).join(" ").normalize("NFKC");
+    // 店名に文字（かな/カナ/漢字/英字）が含まれない行や集計行は取引とみなさない
+    if (!/[ぁ-んァ-ヶ一-龠A-Za-zＡ-Ｚａ-ｚｦ-ﾟ]/.test(store) || SUM_ROW.test(store)) continue;
+    txns.push({ id: Date.now() + Math.random() * 1e4, date: dt.md, description: store, amount, category: autoCategory(store, rules), source: "card", ym: dt.ym });
   }
   return txns;
 }
@@ -575,7 +646,7 @@ export default function Home() {
     sUpL(true); sUpR("");
     try {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      const text = isPdf ? await extractPdfText(file) : await file.text();
+      const text = isPdf ? await extractPdfText(file) : await readTextAuto(file);
       let txns = isPdf ? parsePdfStatement(text, D.rules) : parseCSV(text, D.rules);
       if (txns.length === 0) txns = parseCSV(text, D.rules); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
@@ -1366,7 +1437,7 @@ export default function Home() {
       </BS>
 
       <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
-        <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。</p>
+        <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:10,color:"#888"}}>楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPayなど主要カードの様式に対応（Shift_JISのCSVも自動判別）</span></p>
         <div style={{marginBottom:10}}>
           <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>取引の入れ先</label>
           <div style={{display:"flex",gap:6}}>
