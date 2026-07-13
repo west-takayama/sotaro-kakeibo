@@ -478,6 +478,7 @@ export default function Home() {
   const [shCat,sShCat]=useState(false); const [eCat,sECat]=useState<string|null>(null);
   const [fCN,sfCN]=useState(""); const [fCI,sfCI]=useState("🏷️"); const [fCCo,sfCCo]=useState("#4ECDC4"); const [fCT,sfCT]=useState("v");
   const [upR,sUpR]=useState(""); const [upL,sUpL]=useState(false); const [upMode,sUpMode]=useState<"auto"|"cur">("auto");
+  const [upPrev,sUpPrev]=useState<any[]|null>(null); // 取込プレビュー（確認してから追加）
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState(""); const [eInId,sEInId]=useState<number|null>(null);
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
   const [fAT,sfAT]=useState("savings"); const [fAA,sfAA]=useState(""); const [fAN,sfAN]=useState("");
@@ -657,8 +658,18 @@ export default function Home() {
   const delAs=(id:number)=>sD((p:any)=>{const na=(p.assets||[]).filter((a:any)=>a.id!==id);return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});
   const delLi=(id:number)=>sD((p:any)=>{const nl=(p.liabilities||[]).filter((a:any)=>a.id!==id);return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});
 
+  // 年なし日付(MM/DD)のCSVは表示中の月から年を推定（月が2つ以上先なら前年とみなす）
+  const inferYm = (date:string) => {
+    const m = String(date||"").match(/^(\d{1,2})[\/\-]\d{1,2}/); if (!m) return null;
+    const mo = parseInt(m[1],10); if (!mo || mo > 12) return null;
+    const [cy, cmo] = cm.split("-").map(Number); const y = (mo - cmo > 1) ? cy - 1 : cy;
+    return `${y}-${String(mo).padStart(2,"0")}`;
+  };
+  const destYm = (t:any) => (upMode==="auto") ? (t.ym || inferYm(t.date) || cm) : cm;
+
+  // ① 解析してプレビューに出す（この時点ではまだ追加しない）
   const handleUpload = async (file: File) => {
-    sUpL(true); sUpR("");
+    sUpL(true); sUpR(""); sUpPrev(null);
     try {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
       const text = isPdf ? await extractPdfText(file) : await readTextAuto(file);
@@ -666,54 +677,60 @@ export default function Home() {
       if (txns.length === 0) txns = parseCSV(text, D.rules); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
         sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
-      } else {
-        // ── 行き先の月ごとにグループ化（自動＝取引の日付どおり / 手動＝表示中の月）──
-        // 年なし日付(MM/DD)のCSVは表示中の月から年を推定（月が2つ以上先なら前年とみなす）
-        const inferYm = (date:string) => {
-          const m = String(date||"").match(/^(\d{1,2})[\/\-]\d{1,2}/); if (!m) return null;
-          const mo = parseInt(m[1],10); if (!mo || mo > 12) return null;
-          const [cy, cmo] = cm.split("-").map(Number); const y = (mo - cmo > 1) ? cy - 1 : cy;
-          return `${y}-${String(mo).padStart(2,"0")}`;
-        };
-        const groups: Record<string, any[]> = {};
-        for (const t of txns) {
-          const key = (upMode==="auto") ? (t.ym || inferYm(t.date) || cm) : cm;
-          const { ym, ...rest } = t;
-          (groups[key] = groups[key] || []).push(rest);
-        }
-        // 月ごとに重複をスキップして追加
-        // 既存件数ぶんだけスキップする方式：同ファイル内の「同日・同額・同店の正当な複数取引」は
-        // すべて追加され、同じファイルの再アップロードは全件スキップされる
-        const added: Record<string, number> = {}; let dup = 0;
-        const fresh: Record<string, any[]> = {};
-        for (const [key, list] of Object.entries(groups)) {
-          const cnt = new Map<string, number>();
-          (((D.months[key]?.cardExp) || []) as any[]).forEach((t:any)=>{const k=`${t.date}|${t.amount}|${t.description}`;cnt.set(k,(cnt.get(k)||0)+1);});
-          for (const t of list) {
-            const k = `${t.date}|${t.amount}|${t.description}`;
-            const c = cnt.get(k) || 0;
-            if (c > 0) { cnt.set(k, c - 1); dup++; continue; }
-            (fresh[key] = fresh[key] || []).push(t);
-          }
-          if (fresh[key]?.length) added[key] = fresh[key].length;
-        }
-        const total = Object.values(added).reduce((s,n)=>s+n,0);
-        if (total === 0) sUpR(`ℹ️ ${txns.length}件すべて登録済みでした（重複スキップ）。`);
-        else {
-          sD((p:any)=>{
-            const months = {...p.months};
-            for (const [key, list] of Object.entries(fresh)) {
-              const m = months[key] || { incomes:[], manualExp:[], cardExp:[] };
-              months[key] = { ...m, cardExp: [...(m.cardExp||[]), ...list] };
-            }
-            return { ...p, months };
-          });
-          const parts = Object.entries(added).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`);
-          sUpR(`✅ ${parts.join("、")}追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}`);
-        }
-      }
+      } else sUpPrev(txns);
     } catch(e:any) { sUpR("❌ 読み取りエラー: "+(e?.message||e)); }
     sUpL(false);
+  };
+  // プレビューでのカテゴリ修正: 同じ店はまとめて変更し、確定時に学習ルールへ記録する
+  const prevSetCat = (idx:number, val:string) => {
+    sUpPrev((p:any[]|null)=>{
+      if(!p) return p;
+      const key = kanaNorm(p[idx]?.description||"");
+      return p.map((t,i)=> (i===idx || kanaNorm(t.description||"")===key) ? {...t, category:val, _fix:true} : t);
+    });
+  };
+  // ② プレビュー確定 → 重複スキップして追加＋修正したカテゴリを学習
+  const commitUpload = (txns:any[]) => {
+    // ── 行き先の月ごとにグループ化（自動＝取引の日付どおり / 手動＝表示中の月）──
+    const groups: Record<string, any[]> = {};
+    const learned: Record<string,string> = {};
+    for (const t of txns) {
+      if (t._fix) learned[kanaNorm(t.description||"")] = t.category;
+      const { ym, _fix, ...rest } = t;
+      (groups[destYm(t)] = groups[destYm(t)] || []).push(rest);
+    }
+    // 月ごとに重複をスキップして追加
+    // 既存件数ぶんだけスキップする方式：同ファイル内の「同日・同額・同店の正当な複数取引」は
+    // すべて追加され、同じファイルの再アップロードは全件スキップされる
+    const added: Record<string, number> = {}; let dup = 0;
+    const fresh: Record<string, any[]> = {};
+    for (const [key, list] of Object.entries(groups)) {
+      const cnt = new Map<string, number>();
+      (((D.months[key]?.cardExp) || []) as any[]).forEach((t:any)=>{const k=`${t.date}|${t.amount}|${t.description}`;cnt.set(k,(cnt.get(k)||0)+1);});
+      for (const t of list) {
+        const k = `${t.date}|${t.amount}|${t.description}`;
+        const c = cnt.get(k) || 0;
+        if (c > 0) { cnt.set(k, c - 1); dup++; continue; }
+        (fresh[key] = fresh[key] || []).push(t);
+      }
+      if (fresh[key]?.length) added[key] = fresh[key].length;
+    }
+    const total = Object.values(added).reduce((s,n)=>s+n,0);
+    const nLearn = Object.keys(learned).length;
+    if (total === 0) sUpR(`ℹ️ ${txns.length}件すべて登録済みでした（重複スキップ）。`);
+    else {
+      sD((p:any)=>{
+        const months = {...p.months};
+        for (const [key, list] of Object.entries(fresh)) {
+          const m = months[key] || { incomes:[], manualExp:[], cardExp:[] };
+          months[key] = { ...m, cardExp: [...(m.cardExp||[]), ...list] };
+        }
+        return { ...p, months, rules: nLearn ? {...(p.rules||{}), ...learned} : (p.rules||{}) };
+      });
+      const parts = Object.entries(added).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`);
+      sUpR(`✅ ${parts.join("、")}追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}${nLearn>0?` 🧠${nLearn}件の店を学習`:""}`);
+    }
+    sUpPrev(null);
   };
 
   const dl=(content:BlobPart,mime:string,name:string)=>{const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);};
@@ -1451,7 +1468,7 @@ export default function Home() {
         <button onClick={()=>sShE(false)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#999",padding:"9px 0",borderRadius:10,fontSize:12,cursor:"pointer",width:"100%",marginTop:8}}>閉じる</button>
       </BS>
 
-      <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
+      <BS open={shUp} onClose={()=>{sShUp(false);sUpPrev(null);}} title="💳 明細をアップロード">
         <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:10,color:"#888"}}>楽天・三井住友・JCB・アメックス・dカード・イオン・エポス・セゾン・三菱UFJニコス・ライフ・オリコ・ビュー・au PAY・PayPay・銀行系デビットなど主要カードの様式に対応（文字コード・日付形式・返品行は自動判別）</span></p>
         <div style={{marginBottom:10}}>
           <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>取引の入れ先</label>
@@ -1460,13 +1477,45 @@ export default function Home() {
             <button onClick={()=>sUpMode("cur")} style={{flex:1,padding:"8px 4px",borderRadius:8,fontSize:10,cursor:"pointer",background:upMode==="cur"?"rgba(52,152,219,0.15)":"rgba(255,255,255,0.04)",border:"1px solid "+(upMode==="cur"?"rgba(52,152,219,0.4)":"#333"),color:upMode==="cur"?"#3498DB":"#999",fontWeight:600,lineHeight:1.5}}>📌 表示中の月へ<br/>（{cm}）</button>
           </div>
         </div>
+        {!upPrev&&<>
         <p style={{fontSize:10,color:"#777",margin:"0 0 12px",lineHeight:1.6}}>※ 月をまたぐ明細も自動で正しい月に入ります。同じ取引（日付・金額・内容が一致）は自動スキップされるので、何度アップロードしても重複しません。PDFは文字情報のあるもののみ対応。</p>
         <div onClick={()=>{if(upL)return;const inp=document.createElement("input");inp.type="file";inp.accept=".csv,.tsv,.txt,.pdf,application/pdf";inp.onchange=(e:any)=>e.target.files[0]&&handleUpload(e.target.files[0]);inp.click();}}
           style={{border:"2px dashed #333",borderRadius:14,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.02)",marginBottom:12}}>
           {upL?<div><div style={{fontSize:28}}>⏳</div><p style={{color:"#999",fontSize:12,margin:"6px 0 0"}}>読み取り中...</p></div>
           :<div><div style={{fontSize:28}}>📄</div><p style={{color:"#ccc",fontSize:13,margin:"6px 0 4px",fontWeight:600}}>タップして選択</p><p style={{color:"#888",fontSize:11,margin:0}}>CSV / TSV / PDF</p></div>}
         </div>
-        {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:12}}>{upR}</div>}
+        </>}
+        {/* ── 取込プレビュー: 追加前に内容を確認・カテゴリ修正できる ── */}
+        {upPrev&&(()=>{
+          const dest: Record<string,number> = {};
+          upPrev.forEach(t=>{const k=destYm(t);dest[k]=(dest[k]||0)+1;});
+          const destTxt = Object.entries(dest).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`).join("、");
+          const sum = upPrev.reduce((s,t)=>s+t.amount,0);
+          const nOther = upPrev.filter(t=>t.category==="その他").length;
+          return (<div>
+            <div style={{padding:"9px 12px",borderRadius:8,background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",fontSize:11,color:"#2ECC71",fontWeight:600,marginBottom:6}}>
+              📋 {upPrev.length}件・合計¥{sum.toLocaleString()}を読み取りました（{destTxt}）
+            </div>
+            <p style={{fontSize:10,color:"#888",margin:"0 0 8px",lineHeight:1.6}}>カテゴリはタップで変更できます。同じ店はまとめて変わり、次回の取込から自動で仕分けされます。{nOther>0&&<b style={{color:"#FFB347"}}>「📦その他」が{nOther}件あります。ここで直すと今後がラクです。</b>}</p>
+            <div style={{maxHeight:300,overflow:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"2px 8px",marginBottom:10}}>
+              {upPrev.map((t,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:11}}>
+                  <span style={{color:"#777",fontSize:9,fontFamily:"monospace",flexShrink:0}}>{t.date}</span>
+                  <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{t.description}</span>
+                  <span style={{fontFamily:"monospace",color:"#eee",fontWeight:600,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
+                  <select value={t.category} onChange={(e)=>prevSetCat(i,e.target.value)} aria-label="カテゴリを変更"
+                    style={{flexShrink:0,maxWidth:104,background:"rgba(255,255,255,0.05)",border:"1px solid "+(t.category==="その他"?"rgba(255,179,71,0.45)":"#333"),borderRadius:6,color:EC[t.category]?.c||"#aaa",fontSize:10,padding:"3px 2px",outline:"none"}}>
+                    {Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i}{c}</option>)}
+                  </select>
+                </div>))}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>commitUpload(upPrev)} style={{flex:2,background:"linear-gradient(135deg,#2ECC71,#27AE60)",border:"none",color:"#fff",padding:"11px 0",borderRadius:10,fontSize:13,cursor:"pointer",fontWeight:700}}>✅ この内容で追加</button>
+              <button onClick={()=>{sUpPrev(null);sUpR("");}} style={{flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#999",padding:"11px 0",borderRadius:10,fontSize:12,cursor:"pointer"}}>やり直す</button>
+            </div>
+          </div>);
+        })()}
+        {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:12,marginTop:upPrev?10:0}}>{upR}</div>}
       </BS>
 
       <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA} onEnter={addAs}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
