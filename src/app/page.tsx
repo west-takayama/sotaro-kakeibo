@@ -54,7 +54,7 @@ function kanaNorm(s: string): string {
 // カテゴリごとのキーワード辞書（上から順に判定。specificなものを先に）
 const CAT_KW: [string, string[]][] = [
   ["水・飲料", ["プレミアムウォーター","水道","スイドウ","ウォーターサーバー","クリクラ","アクアクララ"]],
-  ["光熱費", ["楽天ガス","楽天でんき","でんき","東京電力","東京ガス","大阪ガス","東邦ガス","西部ガス","関西電力","中部電力","九州電力","東北電力","北海道電力","電気料","ガス料","エナジー","電力"]],
+  ["光熱費", ["楽天ガス","楽天でんき","でんき","東京電力","東京ガス","大阪ガス","東邦ガス","西部ガス","関西電力","中部電力","九州電力","東北電力","北海道電力","電気料","ガス料","エナジー","電力","TEPCO","TOKYO GAS"]],
   ["通信費", ["ソフトバンク","楽天モバイル","ドコモ","DOCOMO","KDDI","ワイモバイル","YMOBILE","UQモバイル","AHAMO","POVO","LINEMO","ブロードバンド","OCN","ビッグローブ","BIGLOBE","NURO","インターネット","通信料","通信"]],
   ["サブスク", ["APPLE COM BILL","GOOGLE","Netflix","Spotify","YOUTUBE","HULU","DISNEY","DAZN","U-NEXT","ABEMA","KINDLE","AUDIBLE","ICLOUD","DROPBOX","MICROSOFT","ADOBE","CANVA","NOTION","ZOOM","GITHUB","OPENAI","CHATGPT","CLAUDE","SUBSCRIPTI","MONESTA","アマゾンプライム","AMAZON PRIME","PRIME VIDEO","エックスサーバー","XSERVER","サーバー","ドメイン","さくらインターネット","RIVERSIDE"]],
   ["保険", ["プルデンシャル","生命保険","損保","あいおい","東京海上","アフラック","メットライフ","県民共済","都民共済","ソニー損保","セイメイホケン"]],
@@ -62,15 +62,15 @@ const CAT_KW: [string, string[]][] = [
   ["投資・貯蓄", ["証券","投信","積立","つみたて","IDECO","NISA","ウェルスナビ","WEALTHNAVI","楽天キャッシュ","ビットフライヤー","BITFLYER","コインチェック","COINCHECK"]],
   ["健康", ["フィットネス","FIT365","ジム","スポーツクラブ","エニタイム","ゴールドジム","カーブス","ヨガ","ピラティス"]],
   ["教育・自己投資", ["動画編集","ドウガヘンシユウ","UDEMY","セミナー","スクール","講座","資格","英会話","スタディ","書店","ブックオフ","紀伊國屋","ジュンク","有隣堂","丸善"]],
-  ["食費（コンビニ）", ["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ","ミニストップ","ニューデイズ","NEWDAYS","セイコーマート","ポプラ","ヤマザキショップ"]],
-  ["食費（自炊）", ["いなげや","イナゲヤ","マルエツ","サミット","ヤオコー","オーケーストア","西友","イトーヨーカドー","ヨーカドー","ベイシア","業務スーパー","ロピア","コープ","まいばすけっと","マミーマート","マックスバリュ","イオンスタイル","ベルク","カスミ","トップバルー","肉のハナマサ","スーパー"]],
-  ["食費（外食）", ["すき家","吉野家","松屋","マクドナルド","スターバックス","ドトール","タリーズ","コメダ","丸亀製麺","はなまる","ココイチ","COCO壱","大戸屋","やよい軒","ガスト","サイゼリヤ","バーミヤン","ジョナサン","デニーズ","ロイヤルホスト","王将","日高屋","富士そば","ゆで太郎","くら寿司","スシロー","はま寿司","銀のさら","モスバーガー","バーガー","ケンタ","ピザ","ドミノ","ウーバー","UBER","出前館","ロケットナウ","カフェ","珈琲","喫茶","レストラン","食堂","キッチン","ダイニング","居酒屋","焼肉","焼鳥","ホルモン","ラーメン","うどん","寿司","ビストロ"]],
-  ["交通・車", ["SUICA","PASMO","モバイルスイカ","エネオス","ガソリン","ETC","高速道路","NEXCO","首都高","タイムズ","パーク24","リパーク","ナビパーク","コインパ","駐車","JR","メトロ","都営","小田急","京王","東急","西武","東武","京急","京成","相鉄","モノレール","タクシー","GO ","バス","洗車","オートバックス","イエローハット","車検","タイヤ","レンタカー","カーシェア"]],
-  ["家電", ["ビックカメラ","ヨドバシ","エディオン","ヤマダ電機","ケーズデンキ","ジョーシン","ノジマ","ソフマップ"]],
-  ["美容・衣服", ["ルミネ","ユニクロ","UNIQLO","GU","ZARA","しまむら","ABCマート","伊勢丹","高島屋","タカシマヤ","マルイ","パルコ","美容院","美容室","理容","ヘアサロン","ネイル","QBハウス","エステ"]],
-  ["日用品", ["ウエルパ","ドラッグ","クリエイト","マツモトキヨシ","マツキヨ","ウェルシア","スギ薬局","ツルハ","サンドラッグ","ココカラ","ドンキ","ドン・キホーテ","メガドンキ","ニトリ","無印","ダイソー","セリア","キャンドゥ","スリーコインズ","カインズ","コーナン","ビバホーム","DCM","ホームセンター","ハンズ","ロフト","アマゾン","AMAZON","イオンモール","ららぽーと","アリオ"]],
+  ["食費（コンビニ）", ["セブン","ファミリーマート","ファミマ","ローソン","デイリーヤマザキ","ミニストップ","ニューデイズ","NEWDAYS","セイコーマート","ポプラ","ヤマザキショップ","SEVEN-ELEVEN","7-ELEVEN","FAMILYMART","FAMILY MART","LAWSON","MINISTOP"]],
+  ["食費（自炊）", ["いなげや","イナゲヤ","マルエツ","サミット","ヤオコー","オーケーストア","西友","イトーヨーカドー","ヨーカドー","ベイシア","業務スーパー","ロピア","コープ","まいばすけっと","マミーマート","マックスバリュ","イオンスタイル","ベルク","カスミ","トップバルー","肉のハナマサ","スーパー","MARUETSU","SEIYU","SUMMIT STORE"]],
+  ["食費（外食）", ["すき家","吉野家","松屋","マクドナルド","スターバックス","ドトール","タリーズ","コメダ","丸亀製麺","はなまる","ココイチ","COCO壱","大戸屋","やよい軒","ガスト","サイゼリヤ","バーミヤン","ジョナサン","デニーズ","ロイヤルホスト","王将","日高屋","富士そば","ゆで太郎","くら寿司","スシロー","はま寿司","銀のさら","モスバーガー","バーガー","ケンタ","ピザ","ドミノ","ウーバー","UBER","出前館","ロケットナウ","カフェ","珈琲","喫茶","レストラン","食堂","キッチン","ダイニング","居酒屋","焼肉","焼鳥","ホルモン","ラーメン","うどん","寿司","ビストロ","STARBUCKS","DOUTOR","TULLYS","MCDONALD","KFC","MOS BURGER","SUKIYA","YOSHINOYA","MATSUYA","GUSTO","SAIZERIYA","SUSHIRO","KURA SUSHI","DOMINO"]],
+  ["交通・車", ["SUICA","PASMO","モバイルスイカ","エネオス","ガソリン","ETC","高速道路","NEXCO","首都高","タイムズ","パーク24","リパーク","ナビパーク","コインパ","駐車","JR","メトロ","都営","小田急","京王","東急","西武","東武","京急","京成","相鉄","モノレール","タクシー","GO ","バス","洗車","オートバックス","イエローハット","車検","タイヤ","レンタカー","カーシェア","ENEOS","SHELL","IDEMITSU","APOLLOSTATION","TIMES","TAXI"]],
+  ["家電", ["ビックカメラ","ヨドバシ","エディオン","ヤマダ電機","ケーズデンキ","ジョーシン","ノジマ","ソフマップ","YODOBASHI","BIC CAMERA","YAMADA DENKI","EDION","NOJIMA"]],
+  ["美容・衣服", ["ルミネ","ユニクロ","UNIQLO","GU","ZARA","しまむら","ABCマート","伊勢丹","高島屋","タカシマヤ","マルイ","パルコ","美容院","美容室","理容","ヘアサロン","ネイル","QBハウス","エステ","SHIMAMURA","ISETAN","TAKASHIMAYA","PARCO"]],
+  ["日用品", ["ウエルパ","ドラッグ","クリエイト","マツモトキヨシ","マツキヨ","ウェルシア","スギ薬局","ツルハ","サンドラッグ","ココカラ","ドンキ","ドン・キホーテ","メガドンキ","ニトリ","無印","ダイソー","セリア","キャンドゥ","スリーコインズ","カインズ","コーナン","ビバホーム","DCM","ホームセンター","ハンズ","ロフト","アマゾン","AMAZON","イオンモール","ららぽーと","アリオ","NITORI","DAISO","MUJI","DON QUIJOTE","MATSUKIYO","WELCIA","TOKYU HANDS"]],
   ["医療費", ["病院","クリニック","歯科","調剤","内科","外科","皮膚科","眼科","耳鼻","整形外科","整骨院","接骨院","鍼灸","薬局"]],
-  ["娯楽", ["ラウンドワン","カラオケ","ビッグエコー","映画","シネマ","TOHO","ゴルフ","ボウリング","温泉","スパ","プレイステーション","PLAYSTATION","NINTENDO","任天堂","STEAM","チケット","遊園地","水族館","動物園","ペイパービュー","レミノ"]],
+  ["娯楽", ["ラウンドワン","カラオケ","ビッグエコー","映画","シネマ","TOHO","ゴルフ","ボウリング","温泉","スパ","プレイステーション","PLAYSTATION","NINTENDO","任天堂","STEAM","チケット","遊園地","水族館","動物園","ペイパービュー","レミノ","KARAOKE","ROUND1","ROUND ONE"]],
   ["家賃・住居", ["家賃","賃貸","不動産"]],
 ];
 function autoCategory(desc: string, rules?: Record<string, string>): string {
@@ -101,7 +101,7 @@ function splitCsvLine(line: string): string[] {
   return out.map(f => f.trim());
 }
 // 各社の日付表記を {ym, md} に正規化
-// 対応: 2026/6/5・2026-6-5・2026.6.5・20260605(8桁)・2026年6月5日・6/5（年なし）
+// 対応: 2026/6/5・2026-6-5・2026.6.5・20260605(8桁)・2026年6月5日・06/15/2026(米国式)・6/5（年なし）
 function parseDateTok(s: string): { ym: string|null; md: string } | null {
   const t = s.trim();
   let m = t.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/);
@@ -110,30 +110,36 @@ function parseDateTok(s: string): { ym: string|null; md: string } | null {
   m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m && +m[2]>=1 && +m[2]<=12 && +m[3]>=1 && +m[3]<=31)
     return { ym: m[1]+"-"+m[2], md: m[2]+"/"+m[3] };
+  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/); // MM/DD/YYYY（アメックス等の米国式）
+  if (m && +m[1]>=1 && +m[1]<=12 && +m[2]>=1 && +m[2]<=31)
+    return { ym: m[3]+"-"+m[1].padStart(2,"0"), md: m[1].padStart(2,"0")+"/"+m[2].padStart(2,"0") };
   m = t.match(/^(\d{1,2})[\/\-.月](\d{1,2})日?$/);
   if (m && +m[1]>=1 && +m[1]<=12 && +m[2]>=1 && +m[2]<=31)
     return { ym: null, md: String(+m[1]).padStart(2,"0")+"/"+String(+m[2]).padStart(2,"0") };
   return null;
 }
-// 金額トークン→数値（¥・カンマ・円・全角マイナス▲△−対応。金額らしくなければnull）
+// 金額トークン→符号つき数値（¥・カンマ・円・▲△−対応・小数もOK。金額らしくなければnull）
+// マイナスは返品・キャンセル行の判定に使う（符号を見て呼び出し側で除外/反転）
 function parseAmtTok(s: string): number | null {
-  const c = s.replace(/[¥￥,、円\s"]/g, "").replace(/[▲△−ー]/g, "-");
-  if (!/^-?\d+$/.test(c)) return null;
-  const n = Math.abs(parseInt(c, 10));
-  return n >= 10 ? n : null;
+  const c = s.replace(/[¥￥,、円\s"]/g, "").replace(/[▲△−]/g, "-");
+  if (!/^-?\d+(\.\d{1,2})?$/.test(c)) return null;
+  const n = Math.round(parseFloat(c));
+  return Math.abs(n) >= 10 ? n : null;
 }
 // 集計行（合計・ご請求・繰越など）は取引ではないのでスキップ
 const SUM_ROW = /^(お?支払い?|ご?請求|ご?利用)?(合|小|総)計|^前回|^繰越|^残高|^今回の?お?支払/;
 
-// ═══ CSVヘッダーの列マッピング（主要カード各社の明細CSVに対応）═══
-// 楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPay・オリコ・ビュー等のヘッダー語彙
-const H_DATE = ["利用日","ご利用日","利用年月日","ご利用年月日","ご利用日付","取引日","日付"];
-const H_DESC = ["利用店名・商品名","利用店名","ご利用店名","加盟店名","ご利用先など","ご利用先","利用先","ご利用場所","利用店舗","ご利用内容","摘要","内容","品名"];
-const H_AMT  = ["利用金額","ご利用金額","利用額","ご利用額","取引金額","金額"];           // 実際に使った額を最優先
+// ═══ CSVヘッダーの列マッピング（主要カード・銀行デビットの明細CSVに対応）═══
+// 楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPay・アメックス・
+// 三菱UFJニコス(MUFG/DC)・ライフ・オリコ・ビュー・銀行系デビット等のヘッダー語彙（英語ヘッダーも可）
+const H_DATE = ["利用日","ご利用日","利用年月日","ご利用年月日","ご利用日付","お取引日","取引日","処理日","日付","date"];
+const H_DESC = ["利用店名・商品名","利用店名","ご利用店名","加盟店名","ご利用先など","ご利用先","利用先","ご利用場所","利用箇所","利用店舗","ご利用内容","お取引内容","取引内容","摘要","内容","品名","description"];
+const H_AMT  = ["利用金額","ご利用金額","利用額","ご利用額","取引金額","出金金額","出金額","引落金額","金額","amount"]; // 実際に使った額を最優先（出金系は銀行デビット用）
 const H_AMT2 = ["支払金額","お支払金額","お支払い金額","支払総額","ご請求額","請求額"];   // 利用金額列がないカード用
 function findCol(header: string[], keys: string[]): number {
-  for (const k of keys) { const i = header.findIndex(h => h === k); if (i >= 0) return i; }       // 完全一致
-  for (const k of keys) { const i = header.findIndex(h => h.includes(k)); if (i >= 0) return i; } // 「ご利用金額(円)」等の表記ゆれ
+  const H = header.map(h => h.replace(/^\uFEFF/, "").trim().toLowerCase()); // BOM除去＋英語ヘッダーの大文字小文字を吸収
+  for (const k of keys) { const i = H.findIndex(h => h === k); if (i >= 0) return i; }       // 完全一致
+  for (const k of keys) { const i = H.findIndex(h => h.includes(k)); if (i >= 0) return i; } // 「ご利用金額(円)」等の表記ゆれ
   return -1;
 }
 
@@ -149,13 +155,22 @@ function parseCSV(text: string, rules?: Record<string, string>): any[] {
     if (d >= 0 && s >= 0 && a >= 0) { hRow = i; cDate = d; cDesc = s; cAmt = a; break; }
   }
   if (hRow >= 0) {
+    const rows: { dt: {ym:string|null;md:string}; amt: number; desc: string }[] = [];
     for (let i = hRow + 1; i < lines.length; i++) {
       const f = splitCsvLine(lines[i]);
       const dt = parseDateTok(f[cDate] || "");
-      const amount = parseAmtTok(f[cAmt] || "");
+      const amt = parseAmtTok(f[cAmt] || "");
       const desc = (f[cDesc] || "").trim();
-      if (!dt || !amount || !desc || SUM_ROW.test(desc)) continue;
-      txns.push({ id: Date.now()+Math.random()*1e4, date: dt.md, description: desc, amount, category: autoCategory(desc, rules), source:"card", ym: dt.ym });
+      if (!dt || amt == null || !desc || SUM_ROW.test(desc)) continue;
+      rows.push({ dt, amt, desc });
+    }
+    // 符号の向きの自動判定: 過半数がマイナスなら「マイナス＝支出」表記のカード（海外系等）とみなして反転。
+    // それ以外のマイナス行は返品・キャンセルなので支出に計上しない
+    const flip = rows.length > 0 && rows.filter(r => r.amt < 0).length > rows.length / 2;
+    for (const r of rows) {
+      const amount = flip ? -r.amt : r.amt;
+      if (amount <= 0) continue;
+      txns.push({ id: Date.now()+Math.random()*1e4, date: r.dt.md, description: r.desc, amount, category: autoCategory(r.desc, rules), source:"card", ym: r.dt.ym });
     }
     if (txns.length) return txns;
   }
@@ -165,8 +180,8 @@ function parseCSV(text: string, rules?: Record<string, string>): any[] {
     if (fields.length < 2) continue;
     let dt: { ym: string|null; md: string } | null = null, amount: number|null = null;
     for (const f of fields) { if (!dt) dt = parseDateTok(f); }
-    for (let i = fields.length-1; i >= 0; i--) { const a = parseAmtTok(fields[i]); if (a) { amount = a; break; } }
-    if (dt && amount) {
+    for (let i = fields.length-1; i >= 0; i--) { const a = parseAmtTok(fields[i]); if (a != null) { amount = a; break; } }
+    if (dt && amount != null && amount > 0) { // マイナスは返品行なので除外
       let desc = "";
       for (const f of fields) {
         if (parseDateTok(f)) continue;
@@ -235,7 +250,7 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
     for (let i = 2; i < toks.length; i++) { if (/払い|リボ|分割|ボーナス/.test(toks[i])) { payIdx = i; break; } }
     if (payIdx < 0 || payIdx + 1 >= toks.length) continue;
     const amount = parseAmtTok(toks[payIdx + 1]);
-    if (!amount) continue;
+    if (amount == null || amount <= 0) continue; // マイナスは返品行
     const store = (toks.slice(1, Math.max(2, payIdx - 1)).join(" ") || toks[1]).normalize("NFKC");
     if (SUM_ROW.test(store)) continue;
     const date = dm[2].padStart(2, "0") + "/" + dm[3].padStart(2, "0");
@@ -250,8 +265,8 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
     const dt = parseDateTok(toks[0]);
     if (!dt) continue;
     let amtIdx = -1, amount: number | null = null;
-    for (let i = toks.length - 1; i >= 1; i--) { const a = parseAmtTok(toks[i]); if (a) { amtIdx = i; amount = a; break; } }
-    if (!amount || amtIdx < 2) continue; // 日付と金額の間に店名が必要
+    for (let i = toks.length - 1; i >= 1; i--) { const a = parseAmtTok(toks[i]); if (a != null) { amtIdx = i; amount = a; break; } }
+    if (amount == null || amount <= 0 || amtIdx < 2) continue; // 日付と金額の間に店名が必要。マイナスは返品行
     const store = toks.slice(1, amtIdx).join(" ").normalize("NFKC");
     // 店名に文字（かな/カナ/漢字/英字）が含まれない行や集計行は取引とみなさない
     if (!/[ぁ-んァ-ヶ一-龠A-Za-zＡ-Ｚａ-ｚｦ-ﾟ]/.test(store) || SUM_ROW.test(store)) continue;
@@ -1437,7 +1452,7 @@ export default function Home() {
       </BS>
 
       <BS open={shUp} onClose={()=>sShUp(false)} title="💳 明細をアップロード">
-        <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:10,color:"#888"}}>楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPayなど主要カードの様式に対応（Shift_JISのCSVも自動判別）</span></p>
+        <p style={{fontSize:12,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:10,color:"#888"}}>楽天・三井住友・JCB・アメックス・dカード・イオン・エポス・セゾン・三菱UFJニコス・ライフ・オリコ・ビュー・au PAY・PayPay・銀行系デビットなど主要カードの様式に対応（文字コード・日付形式・返品行は自動判別）</span></p>
         <div style={{marginBottom:10}}>
           <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>取引の入れ先</label>
           <div style={{display:"flex",gap:6}}>
