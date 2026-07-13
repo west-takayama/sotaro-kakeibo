@@ -1,7 +1,7 @@
 {
-  "name": "マイ家計簿",
-  "short_name": "家計簿",
-  "description": "クレジットカード明細を分析する家計簿アプリ",
+  "name": "マイ決算書",
+  "short_name": "マイ決算書",
+  "description": "カード明細(PDF/CSV)を自動仕分けし、自分専用の決算書(P/L・B/S)ができる無料の家計簿・資産管理アプリ。データは端末内のみ・広告なし・登録不要。",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0b1a",

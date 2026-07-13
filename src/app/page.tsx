@@ -774,7 +774,7 @@ export default function Home() {
 
         {pg==="home"&&(<div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ家計簿</h1>
+            <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書</h1>
             <div style={{display:"flex",gap:4,alignItems:"center"}}>
               <button onClick={()=>shiftMonth(-1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>‹</button>
               <button onClick={()=>sShM(true)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 10px",borderRadius:8,fontSize:12,cursor:"pointer"}}>📅 {cm}</button>
@@ -865,7 +865,7 @@ export default function Home() {
         </div>)}
 
         {pg==="statement"&&(<div>
-          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 2px",color:"#eee"}}>📑 マイ決算書</h2>
+          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 2px",color:"#eee"}}>📑 決算書（P/L・B/S）</h2>
           <p style={{fontSize:10,color:"#666",margin:"0 0 14px"}}>あなた専用の損益計算書(P/L)と貸借対照表(B/S)</p>
           {tE===0&&tI===0&&<div style={cs({textAlign:"center",padding:"20px 16px"})}>
             <div style={{fontSize:26,marginBottom:6}}>📭</div>
@@ -1174,7 +1174,7 @@ export default function Home() {
             </div>}
           </div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>ℹ️ このアプリについて</h3>
-            <p style={{fontSize:11,color:"#999",margin:0,lineHeight:1.8}}>💰 マイ家計簿 — <b style={{color:"#bbb"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
+            <p style={{fontSize:11,color:"#999",margin:0,lineHeight:1.8}}>💰 マイ決算書 — <b style={{color:"#bbb"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
             <span style={{color:"#777"}}>困ったとき：データが消えた→「バックアップの読み込み」で復元 ／ 仕分けが違う→明細でカテゴリをタップして修正（自動で学習）／ カテゴリを増やしたい→上の「カテゴリの管理」</span></p>
           </div>
           <button onClick={()=>{if(confirm("全データをリセット？（先にバックアップの書き出しをおすすめします）")) sD(freshState());}} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginTop:8}}>🗑️ リセット</button>
