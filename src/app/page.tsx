@@ -255,7 +255,13 @@ function genAdvice(tI:number, tE:number, bC:any, x:any={}) {
   else if (realSr >= 20) t.push({ty:"good",i:"🎉",tx:`実質貯蓄率${realSr.toFixed(0)}%。理想的なペースです。この調子！`});
   else if (realSr >= 10) t.push({ty:"info",i:"💡",tx:`貯蓄率${realSr.toFixed(0)}%。理想の20%まであと¥${Math.max(0, Math.ceil((0.2*tI - bal - inv)/1000)*1000).toLocaleString()}。変動費に注目。`});
   else t.push({ty:"warn",i:"⚠️",tx:`貯蓄率${realSr.toFixed(0)}%。まずは手取りの10%を先に取り分けるのがコツです。`});
-  // ② 前月比（増減の気づき）
+  // ② 先月の同じ日時点とのペース（月途中のフェアな比較）
+  if (x.pace && x.pace.prevAt > 0) {
+    const {day, prevAt, diff} = x.pace;
+    if (diff <= -2000) t.push({ty:"good",i:"⏱",tx:`${day}日時点で先月より¥${Math.abs(diff).toLocaleString()}少ないペース。この調子！`});
+    else if (diff >= 2000) t.push({ty:"warn",i:"⏱",tx:`${day}日時点で先月より¥${diff.toLocaleString()}多いペース（先月同時点¥${prevAt.toLocaleString()}）。`});
+  }
+  // ③ 前月比（増減の気づき）
   if (x.prevTE > 0 && tE > 0) {
     const d = tE - x.prevTE, pct = Math.abs(d)/x.prevTE*100;
     if (d <= -3000) t.push({ty:"good",i:"📉",tx:`支出は前月より¥${Math.abs(d).toLocaleString()}減（−${pct.toFixed(0)}%）。確実に改善しています！`});
@@ -323,12 +329,13 @@ function BS({open,onClose,title,children}:any) {
     </div>
   </div>);
 }
-function FI({label,type,value,onChange,placeholder,children}:any) {
+function FI({label,type,value,onChange,placeholder,children,onEnter}:any) {
   return (<div style={{marginBottom:12}}>
     <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>{label}</label>
     {type==="select"?<select value={value} onChange={(e:any)=>onChange(e.target.value)} style={{width:"100%",padding:"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:13,outline:"none"}}>{children}</select>
     :<div style={{position:"relative"}}>{type==="amount"&&<span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#888",fontSize:14}}>¥</span>}
     <input type={type==="amount"?"number":"text"} inputMode={type==="amount"?"numeric":"text"} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder}
+      onKeyDown={onEnter?(e:any)=>{if(e.key==="Enter"){e.preventDefault();onEnter();}}:undefined}
       style={{width:"100%",boxSizing:"border-box",padding:type==="amount"?"10px 12px 10px 28px":"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:13,outline:"none",fontFamily:type==="amount"?"monospace":"inherit"}} /></div>}
   </div>);
 }
@@ -452,6 +459,16 @@ export default function Home() {
     const overCats=Object.entries(catB).map(([c,b]:any)=>[c,(bC[c]?.total||0)-b] as [string,number]).filter(([,d])=>d>0).sort((a,b)=>b[1]-a[1]);
     return{total,spent:tE,perDay,daysLeft,catB,overCats};
   },[budCfg,cm,tE,bC,dayKey]);
+  // ── 先月の「同じ日時点」とのペース比較（月途中でもフェアに比べる）──
+  const paceCmp=useMemo(()=>{
+    if(!cm||cm!==localYM())return null; // 今月を表示中のみ意味がある
+    const pm=D.months[prevKey]; if(!pm)return null;
+    const day=new Date().getDate();
+    const upTo=(list:any[])=>(list||[]).reduce((s:number,t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return s;return parseInt(m[2],10)<=day?s+t.amount:s;},0);
+    const prevAt=upTo([...(pm.cardExp||[]),...(pm.manualExp||[])]);
+    if(prevAt<=0)return null;
+    return {day,prevAt,diff:tE-prevAt};
+  },[cm,prevKey,D.months,tE,dayKey]);
   const advCtx=useMemo(()=>{
     const ups=catDelta.filter(([,d])=>d>0),downs=catDelta.filter(([,d])=>d<0);
     const h=D.assetHist;let histUp=0,isPeak=false;
@@ -467,12 +484,12 @@ export default function Home() {
     // 週末にどれだけ使っているか
     let weekendShare:number|null=null;
     if(tE>0&&cm){const [yy]=cm.split("-").map(Number);let wk=0;allE.forEach((t:any)=>{const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);if(!m)return;const day=new Date(yy,parseInt(m[1],10)-1,parseInt(m[2],10)).getDay();if(day===0||day===6)wk+=t.amount;});weekendShare=wk/tE;}
-    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,weekendShare,
+    return{prevTE:prev.tE,prevTI:prev.tI,fxT,netW,nwTgt,nwP,histUp,isPeak,backup,weekendShare,pace:paceCmp,
       bud:bud&&bud.total>0?{total:bud.total,spent:bud.spent,perDay:bud.perDay}:null,
       overCat:bud?.overCats?.[0]||null,
       upCat:ups.length&&ups[0][1]>=3000?[ups[0][0],ups[0][1]]:null,
       downCat:downs.length&&-downs[0][1]>=3000?[downs[0][0],-downs[0][1]]:null};
-  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud,D.months,D,allE,tE,cm]);
+  },[prev,catDelta,fxT,netW,nwTgt,nwP,D.assetHist,bud,D.months,D,allE,tE,cm,paceCmp]);
   const balA=useCountUp(bal); const netWA=useCountUp(netW);
   // 完全に空の状態か（初回ガイド表示用）
   const isEmpty=useMemo(()=>{
@@ -815,6 +832,7 @@ export default function Home() {
               <span><span style={{color:"#888"}}>支出 </span><span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{tE.toLocaleString()}</span></span>
               {tI>0&&<span><span style={{color:"#888"}}>貯蓄率 </span><span style={{color:bal/tI>=0.2?"#2ECC71":bal/tI>=0.1?"#F39C12":"#FF6B6B",fontFamily:"monospace",fontWeight:700}}>{Math.max(0,bal/tI*100).toFixed(0)}%</span></span>}
               {prev.tE>0&&tE>0&&<span><span style={{color:"#888"}}>前月比 </span><span style={{color:tE<=prev.tE?"#2ECC71":"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>{tE<=prev.tE?"−":"＋"}¥{Math.abs(tE-prev.tE).toLocaleString()}</span></span>}
+              {paceCmp&&<span title={`先月の${paceCmp.day}日時点（¥${paceCmp.prevAt.toLocaleString()}）との比較`}><span style={{color:"#888"}}>同日ペース </span><span style={{color:paceCmp.diff<=0?"#2ECC71":"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>{paceCmp.diff<=0?"−":"＋"}¥{Math.abs(paceCmp.diff).toLocaleString()}</span></span>}
             </div>
             {tI>0&&<div style={{marginTop:6,height:5,background:"rgba(255,255,255,0.08)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:Math.min(100,tE/tI*100)+"%",background:tE/tI>1?"#E74C3C":tE/tI>0.8?"#F39C12":"#2ECC71",borderRadius:3}}/></div>}
           </div>
@@ -1091,7 +1109,22 @@ export default function Home() {
           <p style={{fontSize:10,color:"#888",margin:"0 0 8px"}}>{(q||fCat)?`${q&&qAll?"🌐全期間の":""}絞り込み結果: ${listView.length}件 ・ 合計 `:`💳${md.cardExp?.length||0} + ✏️${md.manualExp?.length||0} = ${allE.length}件 ・ 支出合計 `}<span style={{fontFamily:"monospace",color:"#FF6B6B",fontWeight:700}}>¥{listSum.toLocaleString()}</span>{q&&qAll&&<span style={{color:"#666"}}> ・ 行タップでその月へ移動</span>}</p>
           <div style={cs()}>
             {listView.length===0&&<p style={{fontSize:11,color:"#666",margin:0,textAlign:"center",padding:"12px 0"}}>{allE.length===0?"取引がありません。「明細取込」や「支出」から追加できます。":"条件に合う取引がありません。"}</p>}
-            {listView.map((t:any)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};const cross=!!t._m;return(
+            {(()=>{
+              // 日付順のときは「日付（曜日）＋その日の合計」の見出しでグループ化
+              const grouped=sortBy==="date"&&!(q&&qAll);
+              const gy=cm?parseInt(cm.split("-")[0],10):0;
+              const wd=["日","月","火","水","木","金","土"];
+              const dayTotal:Record<string,number>={};
+              if(grouped)listView.forEach((t:any)=>{dayTotal[t.date]=(dayTotal[t.date]||0)+t.amount;});
+              let last="";
+              return listView.map((t:any)=>{const cfg=EC[t.category]||{i:"📦",c:"#888",t:"v"};const cross=!!t._m;
+              const out:any[]=[];
+              if(grouped&&t.date!==last){last=t.date;
+                const m=String(t.date||"").match(/(\d{1,2})[\/\-](\d{1,2})/);
+                const w=m&&gy?wd[new Date(gy,parseInt(m[1],10)-1,parseInt(m[2],10)).getDay()]:"";
+                out.push(<div key={"h"+t.date} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"9px 0 2px",fontSize:9}}><span style={{color:"#9a9aae",fontWeight:700}}>{t.date}{w&&<span style={{color:w==="土"?"#5DADE2":w==="日"?"#FF6B6B":"#777"}}>（{w}）</span>}</span><span style={{fontFamily:"monospace",color:"#777"}}>¥{dayTotal[t.date].toLocaleString()}</span></div>);
+              }
+              out.push(
             <div key={cross?t._m+"-"+t.id:t.id} onClick={cross?()=>jumpMonth(t):undefined} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontSize:11,cursor:cross?"pointer":"default"}}>
               {cross&&<span style={{fontSize:8,color:"#5DADE2",border:"1px solid rgba(93,173,226,0.3)",borderRadius:4,padding:"0 3px",flexShrink:0}}>{t._m.slice(2)}</span>}
               <span style={{flex:"0 0 34px",color:"#666",fontFamily:"monospace",fontSize:9}}>{t.date}</span>
@@ -1100,8 +1133,10 @@ export default function Home() {
               <span onClick={cross?undefined:()=>openTx(t)} style={{fontFamily:"monospace",color:"#ddd",fontSize:10,cursor:"pointer"}}>¥{t.amount.toLocaleString()}</span>
               {!cross&&eI===t.id?<select value={t.category} onChange={(e:any)=>{hCC(t,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
               :<span onClick={cross?undefined:()=>sEI(t.id)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
-              {!cross&&<button onClick={()=>delTx(t)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>}
-            </div>);})}
+              {!cross&&<button onClick={()=>delTx(t)} aria-label={`「${t.description}」を削除`} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>}
+            </div>);
+              return out;
+            });})()}
           </div>
         </div>)}
 
@@ -1193,7 +1228,7 @@ export default function Home() {
       </div>
 
       {/* Modals */}
-      <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
+      <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA} onEnter={addI}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
 
       <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加">
         <div style={{marginBottom:12}}>
@@ -1202,7 +1237,7 @@ export default function Home() {
             {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"6px 10px",borderRadius:999,fontSize:10,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(fEC===c?v.c+"66":"#333"),color:fEC===c?v.c:"#aaa",fontWeight:fEC===c?700:400}}>{v.i}{c}</button>)}
           </div>
         </div>
-        <FI label="金額" type="amount" value={fEA} onChange={sfEA}/>
+        <FI label="金額" type="amount" value={fEA} onChange={sfEA} onEnter={addE}/>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,margin:"-4px 0 12px"}}>
           {[100,500,1000,5000].map(a=><button key={a} onClick={()=>sfEA(String((Number(fEA)||0)+a))} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#bbb",fontFamily:"monospace"}}>+¥{a.toLocaleString()}</button>)}
           {fEA&&<button onClick={()=>sfEA("")} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C"}}>クリア</button>}
@@ -1230,8 +1265,8 @@ export default function Home() {
         {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:12}}>{upR}</div>}
       </BS>
 
-      <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
-      <BS open={shL} onClose={()=>sShL(false)} title={eLiId?"💳 負債を編集":"💳 負債を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eLiId?"金額・メモを変更できます。":"ローン残高やカード未払い分などを入力します。同じ種類は上書きされます。"}</p><FI label="種類" type="select" value={fLT} onChange={sfLT}>{LT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fLA} onChange={sfLA}/><FI label="メモ" value={fLN} onChange={sfLN} placeholder="例: 〇〇銀行 住宅ローン"/><button onClick={addLi} style={{...B1,background:"linear-gradient(135deg,#FF6B6B,#E74C3C)"}}>{eLiId?"保存":"追加"}</button></BS>
+      <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA} onEnter={addAs}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
+      <BS open={shL} onClose={()=>sShL(false)} title={eLiId?"💳 負債を編集":"💳 負債を追加"}><p style={{fontSize:10,color:"#888",margin:"0 0 12px"}}>{eLiId?"金額・メモを変更できます。":"ローン残高やカード未払い分などを入力します。同じ種類は上書きされます。"}</p><FI label="種類" type="select" value={fLT} onChange={sfLT}>{LT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fLA} onChange={sfLA} onEnter={addLi}/><FI label="メモ" value={fLN} onChange={sfLN} placeholder="例: 〇〇銀行 住宅ローン"/><button onClick={addLi} style={{...B1,background:"linear-gradient(135deg,#FF6B6B,#E74C3C)"}}>{eLiId?"保存":"追加"}</button></BS>
       <BS open={shCat} onClose={()=>{sShCat(false);sECat(null);}} title={eCat?"🏷️ カテゴリを編集":"🏷️ カテゴリを作成"}>
         {eCat&&(eCat in ECB)?<p style={{fontSize:11,color:"#999",margin:"0 0 12px"}}>標準カテゴリ <b style={{color:"#ddd"}}>{eCat}</b> の見た目と種別を変更します（名前は変更できません）。</p>
         :<FI label="カテゴリ名" value={fCN} onChange={sfCN} placeholder="例: ペット / 子ども / 交際費"/>}
@@ -1264,7 +1299,7 @@ export default function Home() {
       <BS open={shT} onClose={()=>{sShT(false);sETx(null);}} title="✏️ 取引を編集">
         <FI label="日付" value={fTD} onChange={sfTD} placeholder="例: 07/15"/>
         <FI label="内容（店名）" value={fTN} onChange={sfTN} placeholder="例: スーパー〇〇"/>
-        <FI label="金額" type="amount" value={fTA} onChange={sfTA}/>
+        <FI label="金額" type="amount" value={fTA} onChange={sfTA} onEnter={saveTx}/>
         <FI label="カテゴリ" type="select" value={fTC} onChange={sfTC}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</FI>
         <button onClick={saveTx} style={B1}>保存</button>
         <button onClick={()=>delTx(eTx)} style={{background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.25)",color:"#E74C3C",padding:"10px 0",borderRadius:10,fontSize:12,cursor:"pointer",width:"100%",marginTop:8,fontWeight:600}}>🗑️ この取引を削除</button>
