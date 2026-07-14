@@ -689,14 +689,18 @@ export default function Home() {
       return p.map((t,i)=> (i===idx || kanaNorm(t.description||"")===key) ? {...t, category:val, _fix:true} : t);
     });
   };
-  // ② プレビュー確定 → 重複スキップして追加＋修正したカテゴリを学習
-  const commitUpload = (txns:any[]) => {
+  // プレビューでの除外トグル: 立て替え払い・経費など家計に入れたくない行を取込から外す
+  const prevToggle = (idx:number) => sUpPrev((p:any[]|null)=>p?p.map((t,i)=>i===idx?{...t,_skip:!t._skip}:t):p);
+  // ② プレビュー確定 → 重複スキップして追加＋修正したカテゴリを学習（除外行は取り込まない）
+  const commitUpload = (all:any[]) => {
+    const txns = all.filter(t=>!t._skip);
+    if (txns.length === 0) { sUpR("ℹ️ すべて除外されています。取り込む行にチェックを入れてください。"); return; }
     // ── 行き先の月ごとにグループ化（自動＝取引の日付どおり / 手動＝表示中の月）──
     const groups: Record<string, any[]> = {};
     const learned: Record<string,string> = {};
     for (const t of txns) {
       if (t._fix) learned[kanaNorm(t.description||"")] = t.category;
-      const { ym, _fix, ...rest } = t;
+      const { ym, _fix, _skip, ...rest } = t;
       (groups[destYm(t)] = groups[destYm(t)] || []).push(rest);
     }
     // 月ごとに重複をスキップして追加
@@ -1487,30 +1491,33 @@ export default function Home() {
         </>}
         {/* ── 取込プレビュー: 追加前に内容を確認・カテゴリ修正できる ── */}
         {upPrev&&(()=>{
+          const inc = upPrev.filter(t=>!t._skip);
           const dest: Record<string,number> = {};
-          upPrev.forEach(t=>{const k=destYm(t);dest[k]=(dest[k]||0)+1;});
+          inc.forEach(t=>{const k=destYm(t);dest[k]=(dest[k]||0)+1;});
           const destTxt = Object.entries(dest).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`).join("、");
-          const sum = upPrev.reduce((s,t)=>s+t.amount,0);
-          const nOther = upPrev.filter(t=>t.category==="その他").length;
+          const sum = inc.reduce((s,t)=>s+t.amount,0);
+          const nOther = inc.filter(t=>t.category==="その他").length;
+          const nSkip = upPrev.length - inc.length;
           return (<div>
             <div style={{padding:"9px 12px",borderRadius:8,background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",fontSize:11,color:"#2ECC71",fontWeight:600,marginBottom:6}}>
-              📋 {upPrev.length}件・合計¥{sum.toLocaleString()}を読み取りました（{destTxt}）
+              📋 {inc.length}件・合計¥{sum.toLocaleString()}を取り込みます{destTxt?`（${destTxt}）`:""}{nSkip>0?` ／ ${nSkip}件を除外中`:""}
             </div>
-            <p style={{fontSize:10,color:"#888",margin:"0 0 8px",lineHeight:1.6}}>カテゴリはタップで変更できます。同じ店はまとめて変わり、次回の取込から自動で仕分けされます。{nOther>0&&<b style={{color:"#FFB347"}}>「📦その他」が{nOther}件あります。ここで直すと今後がラクです。</b>}</p>
+            <p style={{fontSize:10,color:"#888",margin:"0 0 8px",lineHeight:1.6}}>カテゴリはタップで変更できます（同じ店はまとめて変わり、次回から自動仕分け）。チェックを外すとその行は取り込みません（立て替え・経費などに）。{nOther>0&&<b style={{color:"#FFB347"}}>「📦その他」が{nOther}件あります。ここで直すと今後がラクです。</b>}</p>
             <div style={{maxHeight:300,overflow:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"2px 8px",marginBottom:10}}>
               {upPrev.map((t,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:11}}>
+                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:11,opacity:t._skip?0.4:1}}>
+                  <input type="checkbox" checked={!t._skip} onChange={()=>prevToggle(i)} aria-label="この取引を取り込む" style={{accentColor:"#2ECC71",flexShrink:0,margin:0,width:14,height:14}}/>
                   <span style={{color:"#777",fontSize:9,fontFamily:"monospace",flexShrink:0}}>{t.date}</span>
-                  <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{t.description}</span>
+                  <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0,textDecoration:t._skip?"line-through":"none"}}>{t.description}</span>
                   <span style={{fontFamily:"monospace",color:"#eee",fontWeight:600,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
-                  <select value={t.category} onChange={(e)=>prevSetCat(i,e.target.value)} aria-label="カテゴリを変更"
+                  <select value={t.category} onChange={(e)=>prevSetCat(i,e.target.value)} aria-label="カテゴリを変更" disabled={!!t._skip}
                     style={{flexShrink:0,maxWidth:104,background:"rgba(255,255,255,0.05)",border:"1px solid "+(t.category==="その他"?"rgba(255,179,71,0.45)":"#333"),borderRadius:6,color:EC[t.category]?.c||"#aaa",fontSize:10,padding:"3px 2px",outline:"none"}}>
                     {Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i}{c}</option>)}
                   </select>
                 </div>))}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>commitUpload(upPrev)} style={{flex:2,background:"linear-gradient(135deg,#2ECC71,#27AE60)",border:"none",color:"#fff",padding:"11px 0",borderRadius:10,fontSize:13,cursor:"pointer",fontWeight:700}}>✅ この内容で追加</button>
+              <button onClick={()=>commitUpload(upPrev)} disabled={inc.length===0} style={{flex:2,background:inc.length===0?"rgba(255,255,255,0.08)":"linear-gradient(135deg,#2ECC71,#27AE60)",border:"none",color:inc.length===0?"#666":"#fff",padding:"11px 0",borderRadius:10,fontSize:13,cursor:inc.length===0?"default":"pointer",fontWeight:700}}>✅ {inc.length}件を追加</button>
               <button onClick={()=>{sUpPrev(null);sUpR("");}} style={{flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#999",padding:"11px 0",borderRadius:10,fontSize:12,cursor:"pointer"}}>やり直す</button>
             </div>
           </div>);
