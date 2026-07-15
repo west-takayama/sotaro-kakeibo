@@ -17,7 +17,8 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "マイ決算書", description: APP_DESC, images: ["/og.png"] },
 };
 export const viewport: Viewport = {
-  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: "#0b0b1a",
+  // viewportFit: "cover" がないとノッチ機種で env(safe-area-inset-*) が常に0になり、下部ナビがホームバーと重なる
+  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: "#0b0b1a", viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

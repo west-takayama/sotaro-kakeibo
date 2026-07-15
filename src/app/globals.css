@@ -1,4 +1,8 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+/* ダブルタップズーム由来の300ms遅延をなくし、タップの反応を速くする */
+button, select, input, a { touch-action: manipulation; }
+button:active { opacity: 0.7; }
 body { margin: 0; background: #0b0b1a; color: #e0e0e0; font-family: "Hiragino Sans", -apple-system, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }

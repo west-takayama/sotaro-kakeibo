@@ -408,7 +408,7 @@ function BS({open,onClose,title,children}:any) {
   if(!open) return null;
   return (<div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)"}} />
-    <div style={{position:"relative",width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto",background:"#14142a",borderRadius:"20px 20px 0 0",padding:"18px 16px 30px",border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none"}}>
+    <div style={{position:"relative",width:"100%",maxWidth:480,maxHeight:"85dvh",overflow:"auto",overscrollBehavior:"contain",background:"#14142a",borderRadius:"20px 20px 0 0",padding:"18px 16px calc(30px + env(safe-area-inset-bottom,0px))",border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none"}}>
       <div style={{width:36,height:4,background:"#444",borderRadius:2,margin:"0 auto 12px"}} />
       <h3 style={{fontSize:15,fontWeight:700,margin:"0 0 14px",color:"#eee"}}>{title}</h3>
       {children}
@@ -416,13 +416,14 @@ function BS({open,onClose,title,children}:any) {
   </div>);
 }
 function FI({label,type,value,onChange,placeholder,children,onEnter}:any) {
+  // 入力欄は16px：スマホの読みやすさ＋iOSのフォーカス時自動ズームの回避（16px未満だと発動する環境がある）
   return (<div style={{marginBottom:12}}>
-    <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>{label}</label>
-    {type==="select"?<select value={value} onChange={(e:any)=>onChange(e.target.value)} style={{width:"100%",padding:"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:13,outline:"none"}}>{children}</select>
-    :<div style={{position:"relative"}}>{type==="amount"&&<span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#888",fontSize:14}}>¥</span>}
+    <label style={{fontSize:11,color:"#888",marginBottom:5,display:"block"}}>{label}</label>
+    {type==="select"?<select value={value} onChange={(e:any)=>onChange(e.target.value)} style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:16,outline:"none",minHeight:46}}>{children}</select>
+    :<div style={{position:"relative"}}>{type==="amount"&&<span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#888",fontSize:15}}>¥</span>}
     <input type={type==="amount"?"number":"text"} inputMode={type==="amount"?"numeric":"text"} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder}
       onKeyDown={onEnter?(e:any)=>{if(e.key==="Enter"){e.preventDefault();onEnter();}}:undefined}
-      style={{width:"100%",boxSizing:"border-box",padding:type==="amount"?"10px 12px 10px 28px":"10px 12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:13,outline:"none",fontFamily:type==="amount"?"monospace":"inherit"}} /></div>}
+      style={{width:"100%",boxSizing:"border-box",padding:type==="amount"?"12px 12px 12px 30px":"12px",background:"rgba(255,255,255,0.05)",border:"1px solid #333",borderRadius:10,color:"#eee",fontSize:16,outline:"none",fontFamily:type==="amount"?"monospace":"inherit",minHeight:46}} /></div>}
   </div>);
 }
 function TT({active,payload}:any) {
@@ -438,7 +439,7 @@ function SR({l,v,c,bold,sub,sm,signed}:any){
   </div>);
 }
 const cs = (s:any={}) => ({background:"rgba(255,255,255,0.035)",borderRadius:14,padding:14,border:"1px solid rgba(255,255,255,0.06)",marginBottom:12,...s});
-const B1:React.CSSProperties = {background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",border:"none",color:"#fff",padding:"12px 0",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",width:"100%",fontFamily:"inherit"};
+const B1:React.CSSProperties = {background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",border:"none",color:"#fff",padding:"14px 0",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",width:"100%",fontFamily:"inherit",minHeight:48};
 
 // ═══ マネタイズ設定（リンクはすべてここで差し替える）═══
 // support: 寄付ページ(Ko-fi/OFUSE等) / pro: 応援プラン購入ページ(Stripe Payment Link/BOOTH等)
@@ -975,16 +976,16 @@ export default function Home() {
   const ac:any = {good:"#2ECC71",danger:"#E74C3C",warn:"#F39C12",info:"#bbb"};
 
   return (
-    <div style={{minHeight:"100vh",background:"#0b0b1a",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:72}}>
+    <div style={{minHeight:"100vh",background:"#0b0b1a",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:"calc(84px + env(safe-area-inset-bottom,0px))"}}>
       <div style={{maxWidth:480,margin:"0 auto",padding:"16px 14px"}}>
 
         {pg==="home"&&(<div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:12,marginLeft:4}}>💎</span>}</h1>
-            <div style={{display:"flex",gap:4,alignItems:"center"}}>
-              <button aria-label="前の月へ" onClick={()=>shiftMonth(-1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>‹</button>
-              <button onClick={()=>sShM(true)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 10px",borderRadius:8,fontSize:12,cursor:"pointer"}}>📅 {cm}</button>
-              <button aria-label="次の月へ" onClick={()=>shiftMonth(1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"5px 9px",borderRadius:8,fontSize:12,cursor:"pointer"}}>›</button>
+            <div style={{display:"flex",gap:5,alignItems:"center"}}>
+              <button aria-label="前の月へ" onClick={()=>shiftMonth(-1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"9px 14px",borderRadius:10,fontSize:14,cursor:"pointer",lineHeight:1}}>‹</button>
+              <button onClick={()=>sShM(true)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"9px 12px",borderRadius:10,fontSize:13,cursor:"pointer",lineHeight:1}}>📅 {cm}</button>
+              <button aria-label="次の月へ" onClick={()=>shiftMonth(1)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid #333",color:"#ccc",padding:"9px 14px",borderRadius:10,fontSize:14,cursor:"pointer",lineHeight:1}}>›</button>
             </div>
           </div>
           {showInstall&&<div style={cs({background:"linear-gradient(135deg,rgba(52,152,219,0.1),rgba(46,204,113,0.06))",borderColor:"rgba(52,152,219,0.25)",padding:"12px 14px"})}>
@@ -1213,7 +1214,7 @@ export default function Home() {
                   <p style={{fontSize:11,color:"#ccc",margin:0,lineHeight:1.6}}>{h.tx}<b style={{color:"#2ECC71"}}>年 約¥{h.save.toLocaleString()}の節約余地</b>。</p>
                   {h.url&&<a href={h.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:4,fontSize:10,color:"#FFB347",fontWeight:600,textDecoration:"none"}}>{h.label} →<span style={{fontSize:8,color:"#777",marginLeft:5,border:"1px solid #444",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
                 </div>
-                <button aria-label="このヒントを非表示" onClick={()=>dismissHint(h.id)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0,fontSize:12,flexShrink:0}}>×</button>
+                <button aria-label="このヒントを非表示" onClick={()=>dismissHint(h.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button>
               </div>))}
           </div>}
 
@@ -1267,8 +1268,8 @@ export default function Home() {
             </div>
           </div>
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:10,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#888"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:10,color:"#666",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
-          {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:at?.l||"他",value:a.amount,color:at?.c||"#888"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" label={({name,percent}:any)=>percent>0.05?name:""}>{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"#888"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openAs(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"#666",fontSize:10}}>({a.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div></div>;})}</div>}
-          {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:12,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openLi(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"#666",fontSize:10}}>({a.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div></div>;})}</div>}
+          {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:at?.l||"他",value:a.amount,color:at?.c||"#888"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" label={({name,percent}:any)=>percent>0.05?name:""}>{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"#888"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openAs(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"#666",fontSize:10}}>({a.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
+          {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:12,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openLi(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"#666",fontSize:10}}>({a.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
           {D.assetHist.length>1&&<div style={cs()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#bbb"}}>📈 純資産の推移</h3>
@@ -1292,7 +1293,7 @@ export default function Home() {
             {md.incomes.length>0&&<div style={{marginTop:6}}>{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(
               <div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 0",fontSize:11}}>
                 <span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666",fontSize:9}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button aria-label="収入を削除" onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button></div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button aria-label="収入を削除" onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div>
               </div>);})}</div>}
           </div>
           {(D.months[prevKey]?.manualExp||[]).some((t:any)=>EC[t.category]?.t==="f")&&<button onClick={copyPrevManual} style={{background:"rgba(78,205,196,0.03)",border:"1px dashed rgba(78,205,196,0.3)",color:"#4ECDC4",padding:"8px 0",borderRadius:10,fontSize:11,cursor:"pointer",width:"100%",marginBottom:8,fontWeight:600}}>↩️ 前月の手入力固定費（家賃など）を今月にコピー</button>}
@@ -1340,7 +1341,7 @@ export default function Home() {
               <span onClick={cross?undefined:()=>openTx(t)} style={{fontFamily:"monospace",color:"#ddd",fontSize:10,cursor:"pointer"}}>¥{t.amount.toLocaleString()}</span>
               {!cross&&eI===t.id?<select value={t.category} onChange={(e:any)=>{hCC(t,e.target.value);sEI(null);}} onBlur={()=>sEI(null)} autoFocus style={{background:"#1a1a2e",color:"#ddd",border:"1px solid #444",borderRadius:6,padding:"2px 3px",fontSize:9,maxWidth:100}}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</select>
               :<span onClick={cross?undefined:()=>sEI(t.id)} style={{padding:"1px 5px",borderRadius:8,fontSize:8,cursor:"pointer",background:cfg.c+"18",color:cfg.c,whiteSpace:"nowrap"}}>{cfg.i}{t.category}</span>}
-              {!cross&&<button onClick={()=>delTx(t)} aria-label={`「${t.description}」を削除`} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:"0 2px"}}>×</button>}
+              {!cross&&<button onClick={()=>delTx(t)} aria-label={`「${t.description}」を削除`} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button>}
             </div>);
               return out;
             });})()}
@@ -1366,8 +1367,8 @@ export default function Home() {
                   <span style={{width:10,height:10,borderRadius:5,background:v.c,flexShrink:0}}/>
                   <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.i} {name} {custom&&<span style={{fontSize:8,color:"#4ECDC4",border:"1px solid rgba(78,205,196,0.3)",borderRadius:4,padding:"0 4px",marginLeft:2}}>自作</span>}</span>
                   <span style={{fontSize:9,color:v.t==="f"?"#3498DB":"#F39C12",flexShrink:0}}>{v.t==="f"?"固定":"変動"}</span>
-                  <button aria-label="カテゴリを編集" onClick={()=>openCat(name)} style={{background:"none",border:"none",color:"#888",cursor:"pointer",padding:"0 2px",fontSize:11}}>✎</button>
-                  {custom?<button aria-label="カテゴリを削除" onClick={()=>delCat(name)} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button>:<span style={{width:10}}/>}
+                  <button aria-label="カテゴリを編集" onClick={()=>openCat(name)} style={{background:"none",border:"none",color:"#888",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:13,lineHeight:1}}>✎</button>
+                  {custom?<button aria-label="カテゴリを削除" onClick={()=>delCat(name)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button>:<span style={{width:10}}/>}
                 </div>);})}
             </div>
           </div>
@@ -1383,12 +1384,12 @@ export default function Home() {
                   <span style={{color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{k}</span>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                     <span style={{fontSize:10,color:EC[v]?.c||"#888"}}>{EC[v]?.i}{v}</span>
-                    <button onClick={()=>sD((p:any)=>{const r={...p.rules};delete r[k];return{...p,rules:r};})} style={{background:"none",border:"none",color:"#555",cursor:"pointer",padding:0}}>×</button>
+                    <button onClick={()=>sD((p:any)=>{const r={...p.rules};delete r[k];return{...p,rules:r};})} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button>
                   </div>
                 </div>))}
             </div>
           </div>}
-          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button aria-label="収入を削除" onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#555",cursor:"pointer"}}>×</button></div></div>);})}</div>
+          <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💼 収入一覧 ({cm})</h3>{md.incomes.length===0&&<p style={{fontSize:10,color:"#666",margin:0}}>未登録</p>}{md.incomes.map((inc:any)=>{const t=IT.find(x=>x.id===inc.type)||IT[4];return(<div key={inc.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11}}><span onClick={()=>openIn(inc)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{t.i} {t.l} {inc.note&&<span style={{color:"#666"}}>({inc.note})</span>} <span style={{color:"#555",fontSize:9}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:6}}><span onClick={()=>openIn(inc)} style={{fontFamily:"monospace",color:t.c,fontWeight:600,cursor:"pointer"}}>¥{inc.amount.toLocaleString()}</span><button aria-label="収入を削除" onClick={()=>delIn(inc)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>);})}</div>
           <div style={cs()}><h3 style={{fontSize:12,fontWeight:600,margin:"0 0 6px",color:"#ccc"}}>💾 データのバックアップ</h3><p style={{fontSize:11,color:"#999",margin:"0 0 10px",lineHeight:1.6}}>データはこの端末のブラウザ内にだけ保存されます。機種変更やキャッシュ削除で消えないよう、定期的にファイルへ書き出して保管してください。別の端末へ引っ越す時も使えます。</p><div style={{display:"flex",gap:8}}><button onClick={exportData} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬇️ 書き出し</button><button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(e:any)=>e.target.files[0]&&importData(e.target.files[0]);inp.click();}} style={{flex:1,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:600}}>⬆️ 読み込み</button></div>
             {(D as any).lastBackup&&<p style={{fontSize:9,color:"#666",margin:"6px 0 0"}}>最終バックアップ: {(D as any).lastBackup}</p>}
             <button onClick={exportCSV} style={{marginTop:8,background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:12,cursor:"pointer",width:"100%",fontWeight:600}}>📊 明細をCSVで書き出し（Excel用・全期間）</button></div>
@@ -1442,30 +1443,35 @@ export default function Home() {
       </div>
 
       {/* Toast */}
-      {toast&&<div style={{position:"fixed",bottom:76,left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"9px 14px 9px 18px",borderRadius:999,fontSize:12,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",maxWidth:"92vw",display:"flex",alignItems:"center",gap:10}}>
+      {toast&&<div style={{position:"fixed",bottom:"calc(84px + env(safe-area-inset-bottom,0px))",left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"10px 14px 10px 18px",borderRadius:999,fontSize:13,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",maxWidth:"92vw",display:"flex",alignItems:"center",gap:10}}>
         <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{toast.msg}</span>
         {toast.action&&<button onClick={toast.action.fn} style={{background:"rgba(255,179,71,0.15)",border:"1px solid rgba(255,179,71,0.4)",color:"#FFB347",padding:"4px 12px",borderRadius:999,fontSize:11,cursor:"pointer",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{toast.action.label}</button>}
       </div>}
 
+      {/* ＋ クイック追加FAB（主要家計簿アプリ定番の右下ボタン。親指の届く位置に常設） */}
+      <button aria-label="支出をすばやく追加" onClick={()=>sShE(true)}
+        style={{position:"fixed",right:16,bottom:"calc(72px + env(safe-area-inset-bottom,0px))",width:56,height:56,borderRadius:28,border:"none",cursor:"pointer",zIndex:60,
+        background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",color:"#fff",fontSize:28,fontWeight:700,lineHeight:1,boxShadow:"0 4px 16px rgba(255,107,107,0.45)",display:"flex",alignItems:"center",justifyContent:"center",paddingBottom:3}}>＋</button>
+
       {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f0f22",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",paddingBottom:"env(safe-area-inset-bottom,0px)",zIndex:50}}>
-        <div style={{display:"flex",maxWidth:480,width:"100%"}}>{[{id:"home",ic:"🏠",l:"ホーム"},{id:"statement",ic:"📑",l:"決算書"},{id:"assets",ic:"💎",l:"資産"},{id:"list",ic:"📋",l:"明細"},{id:"more",ic:"⚙️",l:"設定"}].map(n=><button key={n.id} onClick={()=>{sPg(n.id);sEI(null);}} style={{flex:1,background:"none",border:"none",padding:"8px 0 6px",cursor:"pointer",color:pg===n.id?"#FF6B6B":"#666",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:17}}>{n.ic}</span><span style={{fontSize:8,fontWeight:pg===n.id?600:400}}>{n.l}</span></button>)}</div>
+        <div style={{display:"flex",maxWidth:480,width:"100%"}}>{[{id:"home",ic:"🏠",l:"ホーム"},{id:"statement",ic:"📑",l:"決算書"},{id:"assets",ic:"💎",l:"資産"},{id:"list",ic:"📋",l:"明細"},{id:"more",ic:"⚙️",l:"設定"}].map(n=><button key={n.id} onClick={()=>{sPg(n.id);sEI(null);}} style={{flex:1,background:"none",border:"none",padding:"9px 0 7px",cursor:"pointer",color:pg===n.id?"#FF6B6B":"#666",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2,minHeight:52}}><span style={{fontSize:21}}>{n.ic}</span><span style={{fontSize:10,fontWeight:pg===n.id?700:400}}>{n.l}</span></button>)}</div>
       </div>
 
       {/* Modals */}
-      <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"7px 12px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA} onEnter={addI}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
+      <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:10,color:"#888",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"10px 14px",borderRadius:10,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(255,255,255,0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"#333"),color:fIT===t.id?t.c:"#aaa"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA} onEnter={addI}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
 
       <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加">
         <div style={{marginBottom:12}}>
           <label style={{fontSize:10,color:"#888",marginBottom:5,display:"block"}}>カテゴリ</label>
           <div style={{display:"flex",flexWrap:"wrap",gap:5,maxHeight:150,overflow:"auto"}}>
-            {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"6px 10px",borderRadius:999,fontSize:10,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(fEC===c?v.c+"66":"#333"),color:fEC===c?v.c:"#aaa",fontWeight:fEC===c?700:400}}>{v.i}{c}</button>)}
+            {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"9px 13px",borderRadius:999,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(fEC===c?v.c+"66":"#333"),color:fEC===c?v.c:"#aaa",fontWeight:fEC===c?700:400}}>{v.i}{c}</button>)}
           </div>
         </div>
         <FI label="金額" type="amount" value={fEA} onChange={sfEA} onEnter={addE}/>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,margin:"-4px 0 12px"}}>
-          {[100,500,1000,5000].map(a=><button key={a} onClick={()=>sfEA(String((Number(fEA)||0)+a))} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#bbb",fontFamily:"monospace"}}>+¥{a.toLocaleString()}</button>)}
-          {fEA&&<button onClick={()=>sfEA("")} style={{padding:"5px 11px",borderRadius:999,fontSize:11,cursor:"pointer",background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C"}}>クリア</button>}
+          {[100,500,1000,5000].map(a=><button key={a} onClick={()=>sfEA(String((Number(fEA)||0)+a))} style={{padding:"9px 13px",borderRadius:999,fontSize:12,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#bbb",fontFamily:"monospace"}}>+¥{a.toLocaleString()}</button>)}
+          {fEA&&<button onClick={()=>sfEA("")} style={{padding:"9px 13px",borderRadius:999,fontSize:12,cursor:"pointer",background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C"}}>クリア</button>}
         </div>
         <FI label="日付（空欄で今日）" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/>
         <button onClick={addE} style={B1}>追加（連続入力OK）</button>
@@ -1506,7 +1512,7 @@ export default function Home() {
             <div style={{maxHeight:300,overflow:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"2px 8px",marginBottom:10}}>
               {upPrev.map((t,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:11,opacity:t._skip?0.4:1}}>
-                  <input type="checkbox" checked={!t._skip} onChange={()=>prevToggle(i)} aria-label="この取引を取り込む" style={{accentColor:"#2ECC71",flexShrink:0,margin:0,width:14,height:14}}/>
+                  <input type="checkbox" checked={!t._skip} onChange={()=>prevToggle(i)} aria-label="この取引を取り込む" style={{accentColor:"#2ECC71",flexShrink:0,margin:0,width:18,height:18}}/>
                   <span style={{color:"#777",fontSize:9,fontFamily:"monospace",flexShrink:0}}>{t.date}</span>
                   <span style={{flex:1,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0,textDecoration:t._skip?"line-through":"none"}}>{t.description}</span>
                   <span style={{fontFamily:"monospace",color:"#eee",fontWeight:600,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
