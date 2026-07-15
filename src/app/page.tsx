@@ -404,13 +404,46 @@ function useCountUp(v: number, dur = 550) {
 }
 
 // ═══ UI Parts ═══
+// 軽い触覚フィードバック（対応端末のみ・iOS Safariは無視されるだけ）
+const vib=(ms=10)=>{try{(navigator as any).vibrate?.(ms);}catch{}};
+// ボトムシート: スライドアニメ・下スワイプで閉じる・背面スクロール固定・戻る操作で閉じる（ネイティブアプリの標準挙動）
 function BS({open,onClose,title,children}:any) {
+  const [dragY,sDragY]=useState(0);
+  const drag=useRef<{y:number;t:number}|null>(null);
+  const sheetRef=useRef<HTMLDivElement>(null);
+  const closeRef=useRef(onClose); closeRef.current=onClose;
+  // 背面（本体ページ）のスクロールを固定
+  useEffect(()=>{
+    if(!open) return;
+    const prev=document.body.style.overflow; document.body.style.overflow="hidden";
+    return ()=>{document.body.style.overflow=prev;};
+  },[open]);
+  // Androidの戻るボタン/スワイプバックでアプリごと閉じず、シートだけ閉じる
+  useEffect(()=>{
+    if(!open) return;
+    const tag=Date.now();
+    try{history.pushState({bs:tag},"");}catch{}
+    const onPop=()=>closeRef.current?.();
+    window.addEventListener("popstate",onPop);
+    return ()=>{
+      window.removeEventListener("popstate",onPop);
+      // ×やオーバーレイで閉じたときは積んだ履歴を消す（戻るボタン経由ならもう消えている）
+      try{ if(history.state&&history.state.bs===tag) history.back(); }catch{}
+    };
+  },[open]);
+  useEffect(()=>{ if(open) sDragY(0); },[open]);
   if(!open) return null;
+  const onTS=(e:any)=>{ const el=sheetRef.current; if(el&&el.scrollTop>2) return; drag.current={y:e.touches[0].clientY,t:Date.now()}; };
+  const onTM=(e:any)=>{ if(!drag.current) return; const dy=e.touches[0].clientY-drag.current.y; if(dy>0) sDragY(dy); };
+  const onTE=()=>{ if(!drag.current) return; const dt=Date.now()-drag.current.t; const dy=dragY; drag.current=null;
+    if(dy>90||(dy>36&&dt<250)) onClose(); else sDragY(0); };
   return (<div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-    <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)"}} />
-    <div style={{position:"relative",width:"100%",maxWidth:480,maxHeight:"85dvh",overflow:"auto",overscrollBehavior:"contain",background:"#14142a",borderRadius:"20px 20px 0 0",padding:"18px 16px calc(30px + env(safe-area-inset-bottom,0px))",border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none"}}>
-      <div style={{width:36,height:4,background:"#444",borderRadius:2,margin:"0 auto 12px"}} />
-      <h3 style={{fontSize:15,fontWeight:700,margin:"0 0 14px",color:"#eee"}}>{title}</h3>
+    <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",animation:"bsFade 0.2s ease"}} />
+    <div ref={sheetRef} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+      style={{position:"relative",width:"100%",maxWidth:480,maxHeight:"85dvh",overflow:"auto",overscrollBehavior:"contain",background:"#14142a",borderRadius:"20px 20px 0 0",padding:"18px 16px calc(30px + env(safe-area-inset-bottom,0px))",border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none",
+      transform:`translateY(${dragY}px)`,transition:dragY?"none":"transform 0.25s cubic-bezier(0.2,0.9,0.3,1)",animation:"bsUp 0.28s cubic-bezier(0.2,0.9,0.3,1)"}}>
+      <div style={{width:40,height:5,background:"#4a4a5e",borderRadius:3,margin:"0 auto 12px"}} />
+      <h3 style={{fontSize:16,fontWeight:700,margin:"0 0 14px",color:"#eee"}}>{title}</h3>
       {children}
     </div>
   </div>);
@@ -494,6 +527,18 @@ export default function Home() {
   const applyProCode=()=>{
     if(checkProCode(fPC)){try{localStorage.setItem("kakeibo-pro","1");}catch{} sPro(true);sfPC("");showToast("💎 応援プランが有効になりました。ありがとうございます！");}
     else showToast("⚠️ コードが正しくありません（形式: MK-XXXX-XXXX）");
+  };
+  // ホームの左右スワイプで月切り替え（横スクロール要素の上から始まったスワイプは無視）
+  const swp=useRef<{x:number;y:number;ok:boolean}|null>(null);
+  const swTS=(e:any)=>{
+    const t=e.touches[0]; let el=e.target as HTMLElement|null; let ok=true;
+    while(el&&el!==e.currentTarget){ if(el.scrollWidth>el.clientWidth+4){ok=false;break;} el=el.parentElement; }
+    swp.current={x:t.clientX,y:t.clientY,ok};
+  };
+  const swTE=(e:any)=>{
+    const s=swp.current; swp.current=null; if(!s||!s.ok) return;
+    const t=e.changedTouches[0]; const dx=t.clientX-s.x, dy=t.clientY-s.y;
+    if(Math.abs(dx)>64&&Math.abs(dy)<48){ shiftMonth(dx<0?1:-1); vib(8); }
   };
   // 友だちに教える（Web Share API → 非対応ならクリップボード）
   const shareApp=async()=>{
@@ -643,7 +688,7 @@ export default function Home() {
     else{uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:Number(fIA),note:fIN,id:Date.now()}]}));showToast(`✅ 収入 ¥${Number(fIA).toLocaleString()} を追加しました`);}
     sfIA("");sfIN("");sEInId(null);sShI(false);};
   // 支出は連続入力できるようモーダルを閉じない（金額・内容だけクリア）
-  const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
+  const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));vib(12);showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
   const snap=(p:any,assets:any[],liabs:any[])=>{const now=localYMD();const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
   const openAs=(a?:any)=>{if(a){sfAT(a.type);sfAA(String(a.amount));sfAN(a.note||"");sEAsId(a.id);}else{sfAT("savings");sfAA("");sfAN("");sEAsId(null);}sShA(true);};
   const openLi=(a?:any)=>{if(a){sfLT(a.type);sfLA(String(a.amount));sfLN(a.note||"");sELiId(a.id);}else{sfLT("loan_home");sfLA("");sfLN("");sELiId(null);}sShL(true);};
@@ -733,7 +778,7 @@ export default function Home() {
         return { ...p, months, rules: nLearn ? {...(p.rules||{}), ...learned} : (p.rules||{}) };
       });
       const parts = Object.entries(added).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,n])=>`${k}へ${n}件`);
-      sUpR(`✅ ${parts.join("、")}追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}${nLearn>0?` 🧠${nLearn}件の店を学習`:""}`);
+      vib(15);sUpR(`✅ ${parts.join("、")}追加しました！${dup>0?`（重複${dup}件はスキップ）`:""}${nLearn>0?` 🧠${nLearn}件の店を学習`:""}`);
     }
     sUpPrev(null);
   };
@@ -979,7 +1024,7 @@ export default function Home() {
     <div style={{minHeight:"100vh",background:"#0b0b1a",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:"calc(84px + env(safe-area-inset-bottom,0px))"}}>
       <div style={{maxWidth:480,margin:"0 auto",padding:"16px 14px"}}>
 
-        {pg==="home"&&(<div>
+        {pg==="home"&&(<div onTouchStart={swTS} onTouchEnd={swTE}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <h1 style={{fontSize:18,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:12,marginLeft:4}}>💎</span>}</h1>
             <div style={{display:"flex",gap:5,alignItems:"center"}}>
@@ -1449,7 +1494,7 @@ export default function Home() {
       </div>}
 
       {/* ＋ クイック追加FAB（主要家計簿アプリ定番の右下ボタン。親指の届く位置に常設） */}
-      <button aria-label="支出をすばやく追加" onClick={()=>sShE(true)}
+      <button aria-label="支出をすばやく追加" onClick={()=>{vib(8);sShE(true);}}
         style={{position:"fixed",right:16,bottom:"calc(72px + env(safe-area-inset-bottom,0px))",width:56,height:56,borderRadius:28,border:"none",cursor:"pointer",zIndex:60,
         background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",color:"#fff",fontSize:28,fontWeight:700,lineHeight:1,boxShadow:"0 4px 16px rgba(255,107,107,0.45)",display:"flex",alignItems:"center",justifyContent:"center",paddingBottom:3}}>＋</button>
 

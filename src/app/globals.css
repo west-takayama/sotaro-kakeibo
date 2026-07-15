@@ -7,3 +7,7 @@ body { margin: 0; background: #0b0b1a; color: #e0e0e0; font-family: "Hiragino Sa
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 input:focus, select:focus { border-color: #FF6B6B !important; outline: none; }
+
+/* ボトムシートの開閉アニメーション */
+@keyframes bsUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes bsFade { from { opacity: 0; } to { opacity: 1; } }
