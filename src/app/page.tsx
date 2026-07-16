@@ -853,7 +853,8 @@ export default function Home() {
         ${top.length?`<text x="100" y="680" font-size="40" fill="#8888a0" font-family="sans-serif">支出トップ${top.length}</text>`:""}
         ${rows}
         ${(tAs>0||tLi>0)?`<text x="100" y="1180" font-size="36" fill="#c8c8d8" font-family="sans-serif">純資産 <tspan fill="#3498DB" font-weight="700" font-family="monospace">${netW<0?"−":""}¥${Math.abs(netW).toLocaleString()}</tspan></text>`:""}
-        <text x="100" y="1290" font-size="28" fill="#66667a" font-family="sans-serif">マイ決算書 — 完全無料・データは端末内のみ</text>
+        <text x="100" y="1275" font-size="28" fill="#66667a" font-family="sans-serif">マイ決算書 — 完全無料・広告なし・登録不要</text>
+        <text x="100" y="1315" font-size="30" font-weight="700" fill="#FFB347" font-family="sans-serif">${esc(location.host)}</text>
       </svg>`;
       const svgUrl=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"}));
       const img=new Image();
@@ -1072,6 +1073,16 @@ export default function Home() {
             {tI>0&&<div style={{marginTop:6,height:5,background:"rgba(255,255,255,0.08)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:Math.min(100,tE/tI*100)+"%",background:tE/tI>1?"#E74C3C":tE/tI>0.8?"#F39C12":"#2ECC71",borderRadius:3}}/></div>}
           </div>
           {badges.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{badges.map(b=><span key={b} style={{fontSize:10,fontWeight:700,color:"#FFB347",background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.25)",padding:"4px 10px",borderRadius:999}}>{b}</span>)}</div>}
+          {/* ── 節約のヒント（ホーム版: 一番効果が大きい1件だけ表示。全件は決算書タブ） ── */}
+          {saveHints.length>0&&(()=>{const h=saveHints[0];return(
+          <div style={cs({borderColor:"rgba(255,179,71,0.22)"})}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+              <h3 style={{fontSize:12,fontWeight:600,margin:0,color:"#FFB347"}}>💡 節約のヒント</h3>
+              {saveHints.length>1&&<button onClick={()=>sPg("statement")} style={{background:"none",border:"none",color:"#888",fontSize:10,cursor:"pointer",padding:"4px 0"}}>他{saveHints.length-1}件 ›</button>}
+            </div>
+            <p style={{fontSize:11,color:"#ccc",margin:0,lineHeight:1.7}}>{h.i} {h.tx}<b style={{color:"#2ECC71"}}>年 約¥{h.save.toLocaleString()}の節約余地</b>。</p>
+            {h.url&&<a href={h.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:6,fontSize:11,color:"#FFB347",fontWeight:700,textDecoration:"none"}}>{h.label} →<span style={{fontSize:8,color:"#777",marginLeft:5,border:"1px solid #444",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
+          </div>);})()}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:12}}>
             <button onClick={()=>openIn()} style={{background:"rgba(46,204,113,0.03)",border:"1px dashed rgba(46,204,113,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💼</div><div style={{fontSize:10,color:"#2ECC71",fontWeight:600}}>収入</div></button>
             <button onClick={()=>sShE(true)} style={{background:"rgba(255,107,107,0.03)",border:"1px dashed rgba(255,107,107,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💸</div><div style={{fontSize:10,color:"#FF6B6B",fontWeight:600}}>支出</div></button>
