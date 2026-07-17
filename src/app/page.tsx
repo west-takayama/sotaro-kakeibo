@@ -1053,6 +1053,7 @@ export default function Home() {
   const [aPer,sAPer]=useState("6m"); // 資産推移グラフの表示期間
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
+  const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
   const calData=useMemo(()=>{
     const curMo=cm?parseInt(cm.split("-")[1],10):0;
     const byDay:Record<number,{total:number,items:any[]}>={};
@@ -1078,13 +1079,37 @@ export default function Home() {
 
   if(!rdy) return <div style={{minHeight:"100vh",background:"#0b0b1a",display:"flex",alignItems:"center",justifyContent:"center",color:"#888"}}>読み込み中...</div>;
   const ac:any = {good:"#2ECC71",danger:"#E74C3C",warn:"#F39C12",info:"#bbb"};
+  // ページ別AIコメント（スマートコメントから関連トピックを抽出して表示）
+  const ACmt=({re,n=3}:{re:RegExp;n?:number})=>{
+    const list=adv.filter((t:any)=>re.test(t.tx));
+    const pick=(list.length?list:adv).slice(0,n);
+    if(!pick.length) return null;
+    return(<div style={cs({background:"rgba(255,107,107,0.03)",borderColor:"rgba(255,107,107,0.1)"})}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#FF6B6B"}}>💬 AIコメント</h3><span style={{fontSize:10,color:"#666"}}>端末内で分析・外部送信なし</span></div>
+      {pick.map((t:any,i:number)=><div key={i} style={{fontSize:13,color:ac[t.ty],padding:"3px 0",lineHeight:1.6}}>{t.i} {t.tx}</div>)}
+    </div>);
+  };
+  // 広告枠（固定費からの節約提案＋アフィリエイトリンク。URL未設定時は提案文のみ）
+  const AdSlot=({idx=0}:{idx?:number})=>{
+    if(!saveHints.length) return null;
+    const h=saveHints[idx%saveHints.length];
+    return(<div style={cs({borderColor:"rgba(255,179,71,0.18)"})}>
+      <h3 style={{fontSize:13,fontWeight:600,margin:"0 0 4px",color:"#FFB347"}}>💡 おトク情報</h3>
+      <p style={{fontSize:13,color:"#ccc",margin:0,lineHeight:1.7}}>{h.i} {h.tx}<b style={{color:"#2ECC71"}}>年 約¥{h.save.toLocaleString()}の節約余地</b>。</p>
+      {h.url&&<a href={h.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:6,fontSize:13,color:"#FFB347",fontWeight:700,textDecoration:"none"}}>{h.label} →<span style={{fontSize:9,color:"#777",marginLeft:5,border:"1px solid #444",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
+    </div>);
+  };
 
   return (
-    <div style={{minHeight:"100vh",background:"#0b0b1a",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:"calc(84px + env(safe-area-inset-bottom,0px))"}}>
+    <div style={{minHeight:"100vh",background:"#0b0b1a",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:"calc(102px + env(safe-area-inset-bottom,0px))"}}>
       <div style={{maxWidth:480,margin:"0 auto",padding:"16px 14px"}}>
+        {/* 共通ヘッダー: タイトル＋ハンバーガーメニュー */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <h1 style={{fontSize:19,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:14,marginLeft:4}}>💎</span>}</h1>
+          <button aria-label="メニューを開く" onClick={()=>sShMenu(true)} style={{width:46,height:46,borderRadius:13,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#ddd",fontSize:21,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,flexShrink:0}}>☰</button>
+        </div>
 
         {pg==="home"&&(<div onTouchStart={swTS} onTouchEnd={swTE}>
-          <h1 style={{fontSize:19,fontWeight:700,margin:"0 0 12px",background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:14,marginLeft:4}}>💎</span>}</h1>
           {/* 月ナビ: 競合アプリ定番の中央バー型（‹ 月 ›） */}
           <div style={{display:"flex",gap:8,alignItems:"stretch",marginBottom:14}}>
             <button aria-label="前の月へ" onClick={()=>shiftMonth(-1)} style={{background:"none",border:"none",color:"#4ECDC4",padding:"10px 14px",fontSize:20,cursor:"pointer",lineHeight:1,fontWeight:700}}>‹</button>
@@ -1258,63 +1283,6 @@ export default function Home() {
               </div>);})}
           </div>}
 
-          {/* ── 月の比較（任意の2ヶ月・カテゴリ別）── */}
-          {cmpData&&<div style={cs()}>
-            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🆚 月の比較（カテゴリ別）</h3>
-            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>好きな2つの月を選んで、どこが変わったか見比べられます</p>
-            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>
-              <select value={cmpData.eA} onChange={(e:any)=>sCmpA(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(93,173,226,0.08)",border:"1px solid rgba(93,173,226,0.3)",borderRadius:8,color:"#5DADE2",fontSize:14,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
-              <span style={{fontSize:13,color:"#888"}}>vs</span>
-              <select value={cmpData.eB} onChange={(e:any)=>sCmpB(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(255,107,107,0.08)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:8,color:"#FF6B6B",fontSize:14,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8,padding:"8px 10px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
-              <span style={{color:"#5DADE2",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tA.toLocaleString()}</span>
-              <span style={{color:cmpData.tB<=cmpData.tA?"#2ECC71":"#FF6B6B",fontWeight:700,fontSize:12}}>{cmpData.tB<=cmpData.tA?"▼":"▲"} {cmpData.tB<=cmpData.tA?"−":"＋"}¥{Math.abs(cmpData.tB-cmpData.tA).toLocaleString()}</span>
-              <span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tB.toLocaleString()}</span>
-            </div>
-            <ResponsiveContainer width="100%" height={Math.max(180,cmpData.cats.length*38)}>
-              <BarChart data={cmpData.cats.map(c=>({...c,label:(EC[c.name]?.i||"")+" "+c.name}))} layout="vertical" margin={{left:96,right:8,top:4,bottom:4}} barGap={1}>
-                <XAxis type="number" hide/><YAxis type="category" dataKey="label" width={96} tick={{fill:"#aaa",fontSize:11}} axisLine={false} tickLine={false}/>
-                <Tooltip content={({active,payload}:any)=>active&&payload?.length?<div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:13,color:"#ddd"}}><div>{payload[0].payload.name}</div><div style={{color:"#5DADE2"}}>{cmpData.eA}: ¥{payload[0].payload.a.toLocaleString()}</div><div style={{color:"#FF6B6B"}}>{cmpData.eB}: ¥{payload[0].payload.b.toLocaleString()}</div></div>:null}/>
-                <Bar dataKey="a" fill="#5DADE2" radius={[0,3,3,0]} name={cmpData.eA} barSize={9}/>
-                <Bar dataKey="b" fill="#FF6B6B" radius={[0,3,3,0]} name={cmpData.eB} barSize={9}/>
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{display:"flex",gap:12,fontSize:11,color:"#888",justifyContent:"center",marginTop:2}}><span><span style={{color:"#5DADE2"}}>●</span> {cmpData.eA}</span><span><span style={{color:"#FF6B6B"}}>●</span> {cmpData.eB}</span></div>
-          </div>}
-
-          {/* ── 支出カレンダー（セルに金額表示・タップで当日の明細）── */}
-          {tE>0&&<div style={cs()}>
-            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🗓 支出カレンダー</h3>
-            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>いつ・いくら使ったか。日をタップで内訳を表示</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-              {["日","月","火","水","木","金","土"].map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11,color:i===0?"#E74C3C":i===6?"#3498DB":"#666",padding:"2px 0",fontWeight:600}}>{d}</div>)}
-              {Array.from({length:calData.off}).map((_,i)=><div key={"e"+i}/>)}
-              {Array.from({length:calData.dim}).map((_,i)=>{const d=i+1;const v=calData.byDay[d];const sel=selDay===d;const dow=(calData.off+i)%7;
-                const amt=v?("-"+v.total.toLocaleString()):"";
-                return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{minHeight:46,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",gap:1,padding:"4px 1px 3px",borderRadius:8,cursor:v?"pointer":"default",background:sel?"rgba(255,107,107,0.18)":v?"rgba(255,255,255,0.045)":"rgba(255,255,255,0.015)",border:sel?"1px solid rgba(255,107,107,0.6)":"1px solid transparent"}}>
-                  <span style={{fontSize:12,color:dow===0?"#E74C3C":dow===6?"#3498DB":v?"#ddd":"#555",fontWeight:v?700:400,lineHeight:1}}>{d}</span>
-                  {v&&<span style={{fontSize:amt.length>7?8:9,color:"#FF8E8E",fontFamily:"monospace",fontWeight:600,lineHeight:1.2,letterSpacing:"-0.3px"}}>{amt}</span>}
-                </div>);})}
-            </div>
-            {selDay&&calData.byDay[selDay]&&(()=>{const [y,mo]=cm.split("-").map(Number);const dow="日月火水木金土"[new Date(y,mo-1,selDay).getDay()];const day=calData.byDay[selDay];return(
-            <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
-                <span style={{fontSize:15,color:"#eee",fontWeight:700}}>{mo}/{selDay}（{dow}）</span>
-                <span style={{fontSize:13,color:"#FF6B6B",fontWeight:700,fontFamily:"monospace"}}>支出 ¥{day.total.toLocaleString()}<span style={{color:"#777",fontWeight:400,fontFamily:"inherit"}}>・{day.items.length}件</span></span>
-              </div>
-              {day.items.map((t:any)=>{const c=EC[t.category]||{i:"📦",c:"#888"};return(
-                <div key={t.id} onClick={()=>openTx(t)} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 2px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
-                  <span style={{fontSize:17,flexShrink:0}}>{c.i}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13.5,color:"#ddd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
-                    <div style={{fontSize:11,color:c.c}}>{t.category}</div>
-                  </div>
-                  <span style={{fontFamily:"monospace",fontSize:14,color:"#eee",fontWeight:700,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
-                </div>);})}
-            </div>);})()}
-          </div>}
-
           {/* ── 固定費・サブスク一覧 ── */}
           {fixedList.length>0&&<div style={cs()}>
             <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#4ECDC4"}}>🔁 固定費・サブスク一覧</h3>
@@ -1378,6 +1346,94 @@ export default function Home() {
             <div style={{marginTop:10,fontSize:11,color:"#666",textAlign:"center"}}>資産 ¥{tAs.toLocaleString()} ＝ 負債 ¥{tLi.toLocaleString()} ＋ 純資産 {netW<0?"-":""}¥{Math.abs(netW).toLocaleString()}</div>
             <button onClick={()=>sPg("assets")} style={{marginTop:10,background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:13,cursor:"pointer",width:"100%",fontWeight:600}}>💎 資産・負債を編集する</button>
           </div>
+        </div>)}
+
+        {pg==="compare"&&(<div>
+          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 10px",color:"#eee"}}>🆚 月比較</h2>
+          {monthKeys.length<2&&<p style={{fontSize:13,color:"#888"}}>比較できる月がまだ1つしかありません。明細がたまると2ヶ月を見比べられます。</p>}
+          {/* ── 月の比較（任意の2ヶ月・カテゴリ別）── */}
+          {cmpData&&<div style={cs()}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🆚 月の比較（カテゴリ別）</h3>
+            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>好きな2つの月を選んで、どこが変わったか見比べられます</p>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>
+              <select value={cmpData.eA} onChange={(e:any)=>sCmpA(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(93,173,226,0.08)",border:"1px solid rgba(93,173,226,0.3)",borderRadius:8,color:"#5DADE2",fontSize:14,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
+              <span style={{fontSize:13,color:"#888"}}>vs</span>
+              <select value={cmpData.eB} onChange={(e:any)=>sCmpB(e.target.value)} style={{flex:1,padding:"8px 10px",background:"rgba(255,107,107,0.08)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:8,color:"#FF6B6B",fontSize:14,outline:"none",fontWeight:600}}>{monthKeys.map(k=><option key={k} value={k}>{k}</option>)}</select>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8,padding:"8px 10px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
+              <span style={{color:"#5DADE2",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tA.toLocaleString()}</span>
+              <span style={{color:cmpData.tB<=cmpData.tA?"#2ECC71":"#FF6B6B",fontWeight:700,fontSize:12}}>{cmpData.tB<=cmpData.tA?"▼":"▲"} {cmpData.tB<=cmpData.tA?"−":"＋"}¥{Math.abs(cmpData.tB-cmpData.tA).toLocaleString()}</span>
+              <span style={{color:"#FF6B6B",fontFamily:"monospace",fontWeight:600}}>¥{cmpData.tB.toLocaleString()}</span>
+            </div>
+            <ResponsiveContainer width="100%" height={Math.max(180,cmpData.cats.length*38)}>
+              <BarChart data={cmpData.cats.map(c=>({...c,label:(EC[c.name]?.i||"")+" "+c.name}))} layout="vertical" margin={{left:96,right:8,top:4,bottom:4}} barGap={1}>
+                <XAxis type="number" hide/><YAxis type="category" dataKey="label" width={96} tick={{fill:"#aaa",fontSize:11}} axisLine={false} tickLine={false}/>
+                <Tooltip content={({active,payload}:any)=>active&&payload?.length?<div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:13,color:"#ddd"}}><div>{payload[0].payload.name}</div><div style={{color:"#5DADE2"}}>{cmpData.eA}: ¥{payload[0].payload.a.toLocaleString()}</div><div style={{color:"#FF6B6B"}}>{cmpData.eB}: ¥{payload[0].payload.b.toLocaleString()}</div></div>:null}/>
+                <Bar dataKey="a" fill="#5DADE2" radius={[0,3,3,0]} name={cmpData.eA} barSize={9}/>
+                <Bar dataKey="b" fill="#FF6B6B" radius={[0,3,3,0]} name={cmpData.eB} barSize={9}/>
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{display:"flex",gap:12,fontSize:11,color:"#888",justifyContent:"center",marginTop:2}}><span><span style={{color:"#5DADE2"}}>●</span> {cmpData.eA}</span><span><span style={{color:"#FF6B6B"}}>●</span> {cmpData.eB}</span></div>
+          </div>}
+          <ACmt re={/前月|減りました|増|ペース|比/}/>
+          <AdSlot idx={1}/>
+        </div>)}
+
+        {pg==="calendar"&&(<div>
+          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 10px",color:"#eee"}}>🗓 カレンダー</h2>
+          <div style={{display:"flex",gap:8,alignItems:"stretch",marginBottom:12}}>
+            <button aria-label="前の月へ" onClick={()=>shiftMonth(-1)} style={{background:"none",border:"none",color:"#4ECDC4",padding:"10px 14px",fontSize:20,cursor:"pointer",lineHeight:1,fontWeight:700}}>‹</button>
+            <button onClick={()=>sShM(true)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",color:"#eee",padding:"11px 0",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer",lineHeight:1,textAlign:"center"}}>{cm?`${cm.split("-")[0]}年${parseInt(cm.split("-")[1],10)}月`:cm}</button>
+            <button aria-label="次の月へ" onClick={()=>shiftMonth(1)} style={{background:"none",border:"none",color:"#4ECDC4",padding:"10px 14px",fontSize:20,cursor:"pointer",lineHeight:1,fontWeight:700}}>›</button>
+          </div>
+          {tE===0&&<p style={{fontSize:13,color:"#888"}}>この月の支出データがまだありません。明細を取り込むか、＋ボタンから支出を追加してみましょう。</p>}
+          {/* ── 支出カレンダー（セルに金額表示・タップで当日の明細）── */}
+          {tE>0&&<div style={cs()}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🗓 支出カレンダー</h3>
+            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>いつ・いくら使ったか。日をタップで内訳を表示</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+              {["日","月","火","水","木","金","土"].map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11,color:i===0?"#E74C3C":i===6?"#3498DB":"#666",padding:"2px 0",fontWeight:600}}>{d}</div>)}
+              {Array.from({length:calData.off}).map((_,i)=><div key={"e"+i}/>)}
+              {Array.from({length:calData.dim}).map((_,i)=>{const d=i+1;const v=calData.byDay[d];const sel=selDay===d;const dow=(calData.off+i)%7;
+                const amt=v?("-"+v.total.toLocaleString()):"";
+                return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{minHeight:46,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",gap:1,padding:"4px 1px 3px",borderRadius:8,cursor:v?"pointer":"default",background:sel?"rgba(255,107,107,0.18)":v?"rgba(255,255,255,0.045)":"rgba(255,255,255,0.015)",border:sel?"1px solid rgba(255,107,107,0.6)":"1px solid transparent"}}>
+                  <span style={{fontSize:12,color:dow===0?"#E74C3C":dow===6?"#3498DB":v?"#ddd":"#555",fontWeight:v?700:400,lineHeight:1}}>{d}</span>
+                  {v&&<span style={{fontSize:amt.length>7?8:9,color:"#FF8E8E",fontFamily:"monospace",fontWeight:600,lineHeight:1.2,letterSpacing:"-0.3px"}}>{amt}</span>}
+                </div>);})}
+            </div>
+            {selDay&&calData.byDay[selDay]&&(()=>{const [y,mo]=cm.split("-").map(Number);const dow="日月火水木金土"[new Date(y,mo-1,selDay).getDay()];const day=calData.byDay[selDay];return(
+            <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                <span style={{fontSize:15,color:"#eee",fontWeight:700}}>{mo}/{selDay}（{dow}）</span>
+                <span style={{fontSize:13,color:"#FF6B6B",fontWeight:700,fontFamily:"monospace"}}>支出 ¥{day.total.toLocaleString()}<span style={{color:"#777",fontWeight:400,fontFamily:"inherit"}}>・{day.items.length}件</span></span>
+              </div>
+              {day.items.map((t:any)=>{const c=EC[t.category]||{i:"📦",c:"#888"};return(
+                <div key={t.id} onClick={()=>openTx(t)} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 2px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
+                  <span style={{fontSize:17,flexShrink:0}}>{c.i}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13.5,color:"#ddd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
+                    <div style={{fontSize:11,color:c.c}}>{t.category}</div>
+                  </div>
+                  <span style={{fontFamily:"monospace",fontSize:14,color:"#eee",fontWeight:700,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
+                </div>);})}
+            </div>);})()}
+          </div>}
+          <ACmt re={/週末|1日|日時点|ペース/}/>
+          <AdSlot idx={2}/>
+        </div>)}
+
+        {pg==="goals"&&(<div>
+          <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 10px",color:"#eee"}}>🎯 目標</h2>
+          <div style={cs({background:"linear-gradient(135deg,rgba(52,152,219,0.06),rgba(46,204,113,0.04))",borderColor:"rgba(52,152,219,0.12)"})}>
+            <div style={{fontSize:12,color:"#999"}}>現在の純資産</div>
+            <div style={{fontSize:26,fontWeight:800,fontFamily:"monospace",color:netW>=0?"#3498DB":"#E74C3C"}}>{netW<0?"-":""}¥{Math.abs(netW).toLocaleString()}</div>
+          </div>
+          <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:12,color:"#666",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
+          <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#FFB347"}}>🎯 貯金目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{D.goal.target>0?"変更":"設定"}</button></div>{D.goal.target>0&&<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:gP+"%",background:gP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{fontSize:12,color:"#888"}}>{gP.toFixed(0)}%（¥{yD.yB.toLocaleString()} / ¥{D.goal.target.toLocaleString()}）</div></div>}</div>
+          {badges.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FFB347"}}>🏅 実績バッジ</h3><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{badges.map(b=><span key={b} style={{fontSize:12,fontWeight:700,color:"#FFB347",background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.25)",padding:"6px 12px",borderRadius:999}}>{b}</span>)}</div></div>}
+          <button onClick={()=>sPg("assets")} style={{width:"100%",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.25)",color:"#C39BD3",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:600,marginBottom:14}}>🔮 将来シミュレーションで到達時期を見る ›</button>
+          <ACmt re={/目標|純資産|貯蓄|投資|黒字/}/>
+          <AdSlot idx={0}/>
         </div>)}
 
         {pg==="assets"&&(<div>
@@ -1477,10 +1533,8 @@ export default function Home() {
               {save<=0&&<p style={{fontSize:12,color:"#FFB347",margin:"8px 0 0"}}>⚠️ 直近の収支が赤字のため、このままだと純資産は増えません。まず月の予算設定から始めましょう。</p>}
               <p style={{fontSize:10,color:"#666",margin:"8px 0 0"}}>※ 将来の成果を保証するものではありません。利回りは複利・月次で概算しています。</p>
             </div>);})()}
-          <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:12,color:"#666",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
           {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:at?.l||"他",value:a.amount,color:at?.c||"#888"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" label={({name,percent}:any)=>percent>0.05?name:""}>{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"#888"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openAs(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
           {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openLi(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
-          <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#FFB347"}}>🎯 貯金目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{D.goal.target>0?"変更":"設定"}</button></div>{D.goal.target>0&&<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:gP+"%",background:gP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{fontSize:12,color:"#888"}}>{gP.toFixed(0)}%（¥{yD.yB.toLocaleString()} / ¥{D.goal.target.toLocaleString()}）</div></div>}</div>
         </div>)}
 
         {pg==="list"&&(<div>
@@ -1489,6 +1543,13 @@ export default function Home() {
             {allE.some((t:any)=>t.category==="その他")&&<button onClick={reCat} style={{background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.25)",color:"#9B59B6",padding:"4px 10px",borderRadius:6,fontSize:12,cursor:"pointer",fontWeight:600}}>🪄 その他を再仕分け</button>}
           </div>
           <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>内容タップで編集 ・ カテゴリタップで変更（同じ店は次回から自動仕分け）</p>
+          {srt.length>0&&<div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:4,WebkitOverflowScrolling:"touch"}}>
+            {srt.map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"#888"};const on=fCat===cat;return(
+              <button key={cat} onClick={()=>sFCat(on?"":cat)} style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"9px 13px",borderRadius:12,cursor:"pointer",background:on?cfg.c+"1e":"rgba(255,255,255,0.04)",border:"1.5px solid "+(on?cfg.c+"aa":"rgba(255,255,255,0.08)")}}>
+                <span style={{fontSize:12,color:on?cfg.c:"#aaa",fontWeight:on?700:500,whiteSpace:"nowrap"}}>{cfg.i} {cat}</span>
+                <span style={{fontSize:12,fontFamily:"monospace",color:cfg.c,fontWeight:700}}>¥{d.total.toLocaleString()}</span>
+              </button>);})}
+          </div>}
           {/* 収入セクション */}
           <div style={cs({padding:"10px 14px"})}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1648,19 +1709,19 @@ export default function Home() {
       </div>
 
       {/* Toast */}
-      {toast&&<div style={{position:"fixed",bottom:"calc(84px + env(safe-area-inset-bottom,0px))",left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"10px 14px 10px 18px",borderRadius:999,fontSize:15,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",maxWidth:"92vw",display:"flex",alignItems:"center",gap:10}}>
+      {toast&&<div style={{position:"fixed",bottom:"calc(100px + env(safe-area-inset-bottom,0px))",left:"50%",transform:"translateX(-50%)",background:"#1c1c30",border:"1px solid rgba(255,255,255,0.15)",color:"#eee",padding:"10px 14px 10px 18px",borderRadius:999,fontSize:15,zIndex:300,boxShadow:"0 4px 20px rgba(0,0,0,0.5)",maxWidth:"92vw",display:"flex",alignItems:"center",gap:10}}>
         <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{toast.msg}</span>
         {toast.action&&<button onClick={toast.action.fn} style={{background:"rgba(255,179,71,0.15)",border:"1px solid rgba(255,179,71,0.4)",color:"#FFB347",padding:"4px 12px",borderRadius:999,fontSize:13,cursor:"pointer",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{toast.action.label}</button>}
       </div>}
 
       {/* ＋ クイック追加FAB（主要家計簿アプリ定番の右下ボタン。親指の届く位置に常設） */}
       <button aria-label="支出をすばやく追加" onClick={()=>{vib(8);sShE(true);}}
-        style={{position:"fixed",right:16,bottom:"calc(72px + env(safe-area-inset-bottom,0px))",width:56,height:56,borderRadius:28,border:"none",cursor:"pointer",zIndex:60,
+        style={{position:"fixed",right:16,bottom:"calc(86px + env(safe-area-inset-bottom,0px))",width:58,height:58,borderRadius:28,border:"none",cursor:"pointer",zIndex:60,
         background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",color:"#fff",fontSize:28,fontWeight:700,lineHeight:1,boxShadow:"0 4px 16px rgba(255,107,107,0.45)",display:"flex",alignItems:"center",justifyContent:"center",paddingBottom:3}}>＋</button>
 
       {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0f0f22",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",paddingBottom:"env(safe-area-inset-bottom,0px)",zIndex:50}}>
-        <div style={{display:"flex",maxWidth:480,width:"100%"}}>{[{id:"home",ic:"🏠",l:"ホーム"},{id:"statement",ic:"📑",l:"決算書"},{id:"assets",ic:"💎",l:"資産"},{id:"list",ic:"📋",l:"明細"},{id:"more",ic:"⚙️",l:"設定"}].map(n=><button key={n.id} onClick={()=>{sPg(n.id);sEI(null);}} style={{flex:1,background:"none",border:"none",padding:"9px 0 7px",cursor:"pointer",color:pg===n.id?"#FF6B6B":"#666",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2,minHeight:52}}><span style={{fontSize:21}}>{n.ic}</span><span style={{fontSize:12,fontWeight:pg===n.id?700:400}}>{n.l}</span></button>)}</div>
+        <div style={{display:"flex",maxWidth:480,width:"100%"}}>{[{id:"home",ic:"🏠",l:"ホーム"},{id:"statement",ic:"📑",l:"決算書"},{id:"assets",ic:"💎",l:"資産"},{id:"list",ic:"📋",l:"明細"},{id:"more",ic:"⚙️",l:"設定"}].map(n=><button key={n.id} onClick={()=>{sPg(n.id);sEI(null);}} style={{flex:1,background:"none",border:"none",padding:"12px 0 9px",cursor:"pointer",color:pg===n.id?"#FF6B6B":"#666",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:3,minHeight:62}}><span style={{fontSize:24}}>{n.ic}</span><span style={{fontSize:12,fontWeight:pg===n.id?700:400}}>{n.l}</span></button>)}</div>
       </div>
 
       {/* Modals */}
@@ -1737,6 +1798,16 @@ export default function Home() {
           </div>);
         })()}
         {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:14,marginTop:upPrev?10:0}}>{upR}</div>}
+      </BS>
+
+      {/* ── ハンバーガーメニュー（全ページ一覧）── */}
+      <BS open={shMenu} onClose={()=>sShMenu(false)} title="📚 メニュー">
+        {([["home","🏠","ホーム","今月のまとめ・収支・予算"],["statement","📑","決算書","P/L・B/S・固定費・年間決算書"],["assets","💎","資産・負債","推移グラフ・将来シミュレーション"],["list","📋","明細","検索・編集・カテゴリ内訳"],["calendar","🗓","カレンダー","いつ・いくら使ったか"],["compare","🆚","月比較","2ヶ月をカテゴリ別に比較"],["goals","🎯","目標","貯金・純資産の進捗と実績"],["more","⚙️","設定","明細取込・バックアップ・応援"]] as [string,string,string,string][]).map(([id,ic,l,d])=>(
+          <button key={id} onClick={()=>{sPg(id);sShMenu(false);sEI(null);}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",textAlign:"left",background:pg===id?"rgba(255,107,107,0.1)":"rgba(255,255,255,0.03)",border:"1px solid "+(pg===id?"rgba(255,107,107,0.35)":"rgba(255,255,255,0.06)"),borderRadius:13,padding:"13px 14px",marginBottom:8,cursor:"pointer"}}>
+            <span style={{fontSize:23,flexShrink:0}}>{ic}</span>
+            <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:15,fontWeight:700,color:pg===id?"#FF6B6B":"#eee"}}>{l}</span><span style={{display:"block",fontSize:12,color:"#888",marginTop:1}}>{d}</span></span>
+            <span style={{color:"#555",fontSize:17,flexShrink:0}}>›</span>
+          </button>))}
       </BS>
 
       {/* ── ② 年間決算書（じぶん株主総会）── */}
