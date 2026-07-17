@@ -462,6 +462,10 @@ function FI({label,type,value,onChange,placeholder,children,onEnter}:any) {
 function TT({active,payload}:any) {
   if(!active||!payload?.[0]) return null;
   const d=payload[0].payload;
+  if(payload.length>1) return <div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:13,color:"#ddd"}}>
+    <div style={{color:"#999",marginBottom:2}}>{d.name}</div>
+    {payload.map((p:any,i:number)=><div key={i} style={{fontWeight:700,color:p.stroke||p.color||"#FF6B6B"}}>{p.name} ¥{(p.value??0).toLocaleString()}</div>)}
+  </div>;
   return <div style={{background:"#1c1c30",border:"1px solid #333",borderRadius:8,padding:"6px 10px",fontSize:13,color:"#ddd"}}><div>{d.name}</div><div style={{fontWeight:700,color:d.color||"#FF6B6B"}}>¥{(d.value??payload[0].value??0).toLocaleString()}</div></div>;
 }
 function SR({l,v,c,bold,sub,sm,signed}:any){
@@ -995,6 +999,7 @@ export default function Home() {
   },[fixedList,hintsOff]);
   // 支出カレンダー（日別合計）
   const [selDay,sSelDay]=useState<number|null>(null);
+  const [aPer,sAPer]=useState("6m"); // 資産推移グラフの表示期間
   const calData=useMemo(()=>{
     const curMo=cm?parseInt(cm.split("-")[1],10):0;
     const byDay:Record<number,{total:number,items:any[]}>={};
@@ -1224,23 +1229,36 @@ export default function Home() {
             <div style={{display:"flex",gap:12,fontSize:11,color:"#888",justifyContent:"center",marginTop:2}}><span><span style={{color:"#5DADE2"}}>●</span> {cmpData.eA}</span><span><span style={{color:"#FF6B6B"}}>●</span> {cmpData.eB}</span></div>
           </div>}
 
-          {/* ── 支出カレンダー ── */}
+          {/* ── 支出カレンダー（セルに金額表示・タップで当日の明細）── */}
           {tE>0&&<div style={cs()}>
             <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#bbb"}}>🗓 支出カレンダー</h3>
-            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>色が濃い日ほど支出が多い日。タップで内訳を表示</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-              {["日","月","火","水","木","金","土"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:"#666",padding:"2px 0"}}>{d}</div>)}
+            <p style={{fontSize:11,color:"#666",margin:"0 0 8px"}}>いつ・いくら使ったか。日をタップで内訳を表示</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+              {["日","月","火","水","木","金","土"].map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11,color:i===0?"#E74C3C":i===6?"#3498DB":"#666",padding:"2px 0",fontWeight:600}}>{d}</div>)}
               {Array.from({length:calData.off}).map((_,i)=><div key={"e"+i}/>)}
-              {Array.from({length:calData.dim}).map((_,i)=>{const d=i+1;const v=calData.byDay[d];const a=v?0.12+0.55*(v.total/calData.max):0;const sel=selDay===d;
-                return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:6,cursor:v?"pointer":"default",background:v?`rgba(255,107,107,${a})`:"rgba(255,255,255,0.02)",border:sel?"1px solid #FF6B6B":"1px solid transparent"}}>
-                  <span style={{fontSize:11,color:v?"#fff":"#555",fontWeight:v?700:400}}>{d}</span>
-                  {v&&<span style={{fontSize:9,color:"rgba(255,255,255,0.85)",fontFamily:"monospace"}}>{v.total>=10000?Math.round(v.total/1000)+"k":v.total>=1000?(v.total/1000).toFixed(1)+"k":v.total}</span>}
+              {Array.from({length:calData.dim}).map((_,i)=>{const d=i+1;const v=calData.byDay[d];const sel=selDay===d;const dow=(calData.off+i)%7;
+                const amt=v?("-"+v.total.toLocaleString()):"";
+                return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{minHeight:46,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",gap:1,padding:"4px 1px 3px",borderRadius:8,cursor:v?"pointer":"default",background:sel?"rgba(255,107,107,0.18)":v?"rgba(255,255,255,0.045)":"rgba(255,255,255,0.015)",border:sel?"1px solid rgba(255,107,107,0.6)":"1px solid transparent"}}>
+                  <span style={{fontSize:12,color:dow===0?"#E74C3C":dow===6?"#3498DB":v?"#ddd":"#555",fontWeight:v?700:400,lineHeight:1}}>{d}</span>
+                  {v&&<span style={{fontSize:amt.length>7?8:9,color:"#FF8E8E",fontFamily:"monospace",fontWeight:600,lineHeight:1.2,letterSpacing:"-0.3px"}}>{amt}</span>}
                 </div>);})}
             </div>
-            {selDay&&calData.byDay[selDay]&&<div style={{marginTop:10,borderTop:"1px dashed rgba(255,255,255,0.1)",paddingTop:8}}>
-              <div style={{fontSize:13,color:"#FFB347",fontWeight:600,marginBottom:4}}>{cm.slice(5)}/{String(selDay).padStart(2,"0")} の支出 ¥{calData.byDay[selDay].total.toLocaleString()}（{calData.byDay[selDay].items.length}件）</div>
-              {calData.byDay[selDay].items.map((t:any)=><div key={t.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#ccc",padding:"2px 0"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{EC[t.category]?.i} {t.description}</span><span style={{fontFamily:"monospace",flexShrink:0}}>¥{t.amount.toLocaleString()}</span></div>)}
-            </div>}
+            {selDay&&calData.byDay[selDay]&&(()=>{const [y,mo]=cm.split("-").map(Number);const dow="日月火水木金土"[new Date(y,mo-1,selDay).getDay()];const day=calData.byDay[selDay];return(
+            <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                <span style={{fontSize:15,color:"#eee",fontWeight:700}}>{mo}/{selDay}（{dow}）</span>
+                <span style={{fontSize:13,color:"#FF6B6B",fontWeight:700,fontFamily:"monospace"}}>支出 ¥{day.total.toLocaleString()}<span style={{color:"#777",fontWeight:400,fontFamily:"inherit"}}>・{day.items.length}件</span></span>
+              </div>
+              {day.items.map((t:any)=>{const c=EC[t.category]||{i:"📦",c:"#888"};return(
+                <div key={t.id} onClick={()=>openTx(t)} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 2px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
+                  <span style={{fontSize:17,flexShrink:0}}>{c.i}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13.5,color:"#ddd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
+                    <div style={{fontSize:11,color:c.c}}>{t.category}</div>
+                  </div>
+                  <span style={{fontFamily:"monospace",fontSize:14,color:"#eee",fontWeight:700,flexShrink:0}}>¥{t.amount.toLocaleString()}</span>
+                </div>);})}
+            </div>);})()}
           </div>}
 
           {/* ── 固定費・サブスク一覧 ── */}
@@ -1322,14 +1340,43 @@ export default function Home() {
               <button onClick={()=>openLi()} style={{flex:1,background:"rgba(255,107,107,0.1)",border:"1px solid rgba(255,107,107,0.2)",color:"#FF6B6B",padding:"8px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600}}>＋ 負債を追加</button>
             </div>
           </div>
+
+          {/* ── 資産推移グラフ（総資産＋純資産の2系列・期間切替つき）── */}
+          {D.assetHist.length>1&&(()=>{
+            const cut=(per:string)=>{const d=new Date();if(per==="3m")d.setMonth(d.getMonth()-3);else if(per==="6m")d.setMonth(d.getMonth()-6);else if(per==="1y")d.setFullYear(d.getFullYear()-1);else return "";return localYMD(d);};
+            const c0=cut(aPer);
+            const hist=D.assetHist.filter((h:any)=>h.date>=c0);
+            const data=(hist.length>1?hist:D.assetHist).map((h:any)=>({name:h.date.slice(5).replace("-","/"),総資産:h.assets??h.total,純資産:h.net??h.total}));
+            return(<div style={cs()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#bbb"}}>📈 資産推移</h3>
+                <button onClick={()=>{const last=D.assetHist[D.assetHist.length-1];if(confirm(`直近の記録（${last?.date}）を取り消しますか？誤入力でグラフが崩れたときに使えます。`)){sD((p:any)=>({...p,assetHist:p.assetHist.slice(0,-1)}));showToast("↩ 直近の記録を取り消しました");}}} style={{background:"none",border:"none",color:"#777",padding:"4px 6px",fontSize:11,cursor:"pointer"}}>↩ 直近を取り消す</button>
+              </div>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                {[["3m","3ヶ月"],["6m","6ヶ月"],["1y","1年"],["all","全期間"]].map(([k,l])=>
+                  <button key={k} onClick={()=>sAPer(k)} style={{flex:1,padding:"7px 0",borderRadius:999,fontSize:12,cursor:"pointer",fontWeight:aPer===k?700:400,background:aPer===k?"rgba(52,152,219,0.18)":"rgba(255,255,255,0.04)",border:"1px solid "+(aPer===k?"rgba(52,152,219,0.5)":"rgba(255,255,255,0.08)"),color:aPer===k?"#3498DB":"#888"}}>{l}</button>)}
+              </div>
+              <ResponsiveContainer width="100%" height={190}>
+                <AreaChart data={data} margin={{top:8,right:8,left:-14,bottom:0}}>
+                  <defs>
+                    <linearGradient id="agA" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2ECC71" stopOpacity={0.28}/><stop offset="95%" stopColor="#2ECC71" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="agN" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3498DB" stopOpacity={0.32}/><stop offset="95%" stopColor="#3498DB" stopOpacity={0}/></linearGradient>
+                  </defs>
+                  <XAxis dataKey="name" tick={{fill:"#888",fontSize:11}} axisLine={false} tickLine={false} minTickGap={28}/>
+                  <YAxis tick={{fill:"#777",fontSize:10}} axisLine={false} tickLine={false} width={54} tickFormatter={(v:number)=>v>=1e8?(v/1e8).toFixed(1)+"億":v>=1e4?Math.round(v/1e4)+"万":String(v)}/>
+                  <Tooltip content={<TT/>}/>
+                  <Area type="monotone" dataKey="総資産" stroke="#2ECC71" fill="url(#agA)" strokeWidth={2}/>
+                  <Area type="monotone" dataKey="純資産" stroke="#3498DB" fill="url(#agN)" strokeWidth={2.5}/>
+                </AreaChart>
+              </ResponsiveContainer>
+              <div style={{display:"flex",gap:14,justifyContent:"center",fontSize:12,color:"#888",marginTop:2}}>
+                <span><span style={{display:"inline-block",width:10,height:3,background:"#2ECC71",borderRadius:2,verticalAlign:"middle",marginRight:5}}/>総資産</span>
+                <span><span style={{display:"inline-block",width:10,height:3,background:"#3498DB",borderRadius:2,verticalAlign:"middle",marginRight:5}}/>純資産</span>
+              </div>
+            </div>);})()}
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:12,color:"#666",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
           {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:at?.l||"他",value:a.amount,color:at?.c||"#888"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" label={({name,percent}:any)=>percent>0.05?name:""}>{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"#888"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openAs(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
           {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openLi(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
-          {D.assetHist.length>1&&<div style={cs()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#bbb"}}>📈 純資産の推移</h3>
-              <button onClick={()=>{const last=D.assetHist[D.assetHist.length-1];if(confirm(`直近の記録（${last?.date}）を取り消しますか？誤入力でグラフが崩れたときに使えます。`)){sD((p:any)=>({...p,assetHist:p.assetHist.slice(0,-1)}));showToast("↩ 直近の記録を取り消しました");}}} style={{background:"rgba(255,255,255,0.05)",border:"1px solid #333",color:"#888",padding:"2px 8px",borderRadius:5,fontSize:11,cursor:"pointer"}}>↩ 直近を取り消す</button>
-            </div><ResponsiveContainer width="100%" height={130}><AreaChart data={D.assetHist.map((h:any)=>({name:h.date.slice(5),value:h.net??h.total}))} margin={{top:8,right:8,left:-20,bottom:0}}><defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3498DB" stopOpacity={0.3}/><stop offset="95%" stopColor="#3498DB" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#888",fontSize:11}} axisLine={false} tickLine={false}/><YAxis hide/><Tooltip content={<TT/>}/><Area type="monotone" dataKey="value" stroke="#3498DB" fill="url(#ag)" strokeWidth={2} name="純資産"/></AreaChart></ResponsiveContainer></div>}
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#FFB347"}}>🎯 貯金目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{D.goal.target>0?"変更":"設定"}</button></div>{D.goal.target>0&&<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:gP+"%",background:gP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{fontSize:12,color:"#888"}}>{gP.toFixed(0)}%（¥{yD.yB.toLocaleString()} / ¥{D.goal.target.toLocaleString()}）</div></div>}</div>
         </div>)}
 
