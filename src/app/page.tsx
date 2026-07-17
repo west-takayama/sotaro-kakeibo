@@ -103,7 +103,7 @@ function splitCsvLine(line: string): string[] {
 // 各社の日付表記を {ym, md} に正規化
 // 対応: 2026/6/5・2026-6-5・2026.6.5・20260605(8桁)・2026年6月5日・06/15/2026(米国式)・6/5（年なし）
 function parseDateTok(s: string): { ym: string|null; md: string } | null {
-  const t = s.trim();
+  const t = s.trim().split(/[\sT]/)[0]; // "2026/05/13 10:23:19"のような日時は日付部だけ使う（PayPay等）
   let m = t.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/);
   if (m && +m[2]>=1 && +m[2]<=12 && +m[3]>=1 && +m[3]<=31)
     return { ym: m[1]+"-"+m[2].padStart(2,"0"), md: m[2].padStart(2,"0")+"/"+m[3].padStart(2,"0") };
@@ -133,7 +133,7 @@ const SUM_ROW = /^(お?支払い?|ご?請求|ご?利用)?(合|小|総)計|^前�
 // 楽天・三井住友・JCB・dカード・イオン・エポス・セゾン・au PAY・PayPay・アメックス・
 // 三菱UFJニコス(MUFG/DC)・ライフ・オリコ・ビュー・銀行系デビット等のヘッダー語彙（英語ヘッダーも可）
 const H_DATE = ["利用日","ご利用日","利用年月日","ご利用年月日","ご利用日付","お取引日","取引日","処理日","日付","date"];
-const H_DESC = ["利用店名・商品名","利用店名","ご利用店名","加盟店名","ご利用先など","ご利用先","利用先","ご利用場所","利用箇所","利用店舗","ご利用内容","お取引内容","取引内容","摘要","内容","品名","description"];
+const H_DESC = ["利用店名・商品名","利用店名","ご利用店名","加盟店名","取引先","ご利用先など","ご利用先","利用先","ご利用場所","利用箇所","利用店舗","ご利用内容","お取引内容","取引内容","摘要","内容","品名","description"];
 const H_AMT  = ["利用金額","ご利用金額","利用額","ご利用額","取引金額","出金金額","出金額","引落金額","金額","amount"]; // 実際に使った額を最優先（出金系は銀行デビット用）
 const H_AMT2 = ["支払金額","お支払金額","お支払い金額","支払総額","ご請求額","請求額"];   // 利用金額列がないカード用
 function findCol(header: string[], keys: string[]): number {
@@ -161,7 +161,7 @@ function parseCSV(text: string, rules?: Record<string, string>): any[] {
       const dt = parseDateTok(f[cDate] || "");
       const amt = parseAmtTok(f[cAmt] || "");
       const desc = (f[cDesc] || "").trim();
-      if (!dt || amt == null || !desc || SUM_ROW.test(desc)) continue;
+      if (!dt || amt == null || !desc || /^[-ー－]+$/.test(desc) || SUM_ROW.test(desc)) continue;
       rows.push({ dt, amt, desc });
     }
     // 符号の向きの自動判定: 過半数がマイナスなら「マイナス＝支出」表記のカード（海外系等）とみなして反転。
@@ -860,17 +860,68 @@ export default function Home() {
         <text x="100" y="1275" font-size="28" fill="#66667a" font-family="sans-serif">マイ決算書 — 完全無料・広告なし・登録不要</text>
         <text x="100" y="1315" font-size="30" font-weight="700" fill="#FFB347" font-family="sans-serif">${esc(location.host)}</text>
       </svg>`;
-      const svgUrl=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"}));
-      const img=new Image();
-      await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=svgUrl;});
-      const canvas=document.createElement("canvas");canvas.width=1080;canvas.height=1350;
-      canvas.getContext("2d")!.drawImage(img,0,0);
-      URL.revokeObjectURL(svgUrl);
-      const png:Blob=await new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error("画像化に失敗")),"image/png"));
-      const file=new File([png],`kessansho-${cm}.png`,{type:"image/png"});
-      if((navigator as any).canShare?.({files:[file]})){ await (navigator as any).share({files:[file],title:"マイ決算書"}); }
-      else { dl(png,"image/png",file.name); }
+      await svgShare(svg,`kessansho-${cm}.png`);
       showToast("📤 今月のまとめ画像を書き出しました");
+    }catch(e:any){ if(e?.name!=="AbortError") alert("画像の作成に失敗しました: "+(e?.message||e)); }
+  };
+  // SVG→PNG化して共有（非対応環境はダウンロード）。まとめ画像・年間決算書で共用
+  const svgShare=async(svg:string,name:string)=>{
+    const svgUrl=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"}));
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=svgUrl;});
+    const canvas=document.createElement("canvas");canvas.width=1080;canvas.height=1350;
+    canvas.getContext("2d")!.drawImage(img,0,0);
+    URL.revokeObjectURL(svgUrl);
+    const png:Blob=await new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error("画像化に失敗")),"image/png"));
+    const file=new File([png],name,{type:"image/png"});
+    if((navigator as any).canShare?.({files:[file]})){ await (navigator as any).share({files:[file],title:"マイ決算書"}); }
+    else { dl(png,"image/png",name); }
+  };
+  // ═══ ② 年間決算書（じぶん株主総会）═══
+  const anYear = cm?cm.slice(0,4):"";
+  const anD = useMemo(()=>{
+    const ms=Object.keys(D.months).filter(k=>k.startsWith(anYear)).sort();
+    let inc=0,exp=0; const catT:Record<string,number>={}; const monthly:{m:string;bal:number;inc:number;exp:number}[]=[];
+    for(const k of ms){
+      const m=D.months[k]; const i=(m.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);
+      const es=[...(m.manualExp||[]),...(m.cardExp||[])]; const e=es.reduce((s:number,x:any)=>s+x.amount,0);
+      es.forEach((t:any)=>{catT[t.category]=(catT[t.category]||0)+t.amount;});
+      inc+=i; exp+=e; monthly.push({m:k.slice(5),bal:i-e,inc:i,exp:e});
+    }
+    const top=Object.entries(catT).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const hist=(D.assetHist||[]).filter((h:any)=>String(h.date||"").startsWith(anYear));
+    const nw0=hist.length?(hist[0].net??hist[0].total):null;
+    const nw1=hist.length?(hist[hist.length-1].net??hist[hist.length-1].total):null;
+    return {ms,inc,exp,bal:inc-exp,sr:inc>0?Math.max(0,Math.round((inc-exp)/inc*100)):null,top,monthly,nw0,nw1};
+  },[D.months,D.assetHist,anYear]);
+  const shareAnnual=async()=>{
+    try{
+      const esc=(s:any)=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      const a=anD; const maxV=a.top.length?a.top[0][1]:1;
+      const rows=a.top.map(([c,v]:any,i:number)=>{const y=832+i*96;const w=Math.max(36,720*(v/maxV));const col=EC[c]?.c||"#888";
+        return `<text x="100" y="${y}" font-size="32" fill="#c8c8d8" font-family="sans-serif">${esc((EC[c]?.i||"")+" "+c)}</text><text x="980" y="${y}" font-size="32" text-anchor="end" fill="#fff" font-weight="700" font-family="monospace">¥${v.toLocaleString()}</text><rect x="100" y="${y+14}" width="${w}" height="10" rx="5" fill="${col}"/>`;}).join("");
+      const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b0b1a"/><stop offset="1" stop-color="#1a1230"/></linearGradient>
+        <linearGradient id="acc" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF6B6B"/><stop offset="1" stop-color="#FFB347"/></linearGradient></defs>
+        <rect width="1080" height="1350" fill="url(#bg)"/>
+        <circle cx="950" cy="120" r="200" fill="#FFB347" opacity="0.06"/><circle cx="100" cy="1250" r="180" fill="#3498DB" opacity="0.07"/>
+        <text x="100" y="150" font-size="44" fill="#8888a0" font-family="sans-serif">${esc(anYear)}年（1〜${a.ms.length?parseInt(a.ms[a.ms.length-1].slice(5),10):12}月）</text>
+        <text x="100" y="238" font-size="66" font-weight="800" fill="#ffffff" font-family="sans-serif">🏛 じぶん決算書</text>
+        <rect x="100" y="270" width="330" height="10" rx="5" fill="url(#acc)"/>
+        <text x="100" y="380" font-size="38" fill="#8888a0" font-family="sans-serif">損益計算書（P/L）</text>
+        <text x="100" y="452" font-size="36" fill="#c8c8d8" font-family="sans-serif">収益（収入合計）</text><text x="980" y="452" font-size="40" text-anchor="end" fill="#2ECC71" font-weight="700" font-family="monospace">¥${a.inc.toLocaleString()}</text>
+        <text x="100" y="524" font-size="36" fill="#c8c8d8" font-family="sans-serif">費用（支出合計）</text><text x="980" y="524" font-size="40" text-anchor="end" fill="#FF6B6B" font-weight="700" font-family="monospace">¥${a.exp.toLocaleString()}</text>
+        <line x1="100" y1="556" x2="980" y2="556" stroke="#33334a" stroke-width="2"/>
+        <text x="100" y="630" font-size="40" fill="#fff" font-weight="700" font-family="sans-serif">当期純利益</text><text x="980" y="630" font-size="58" text-anchor="end" fill="${a.bal>=0?"#2ECC71":"#E74C3C"}" font-weight="800" font-family="monospace">${a.bal>=0?"+":"−"}¥${Math.abs(a.bal).toLocaleString()}</text>
+        ${a.sr!=null?`<text x="100" y="694" font-size="34" fill="#8888a0" font-family="sans-serif">貯蓄率 <tspan fill="${a.sr>=20?"#2ECC71":"#FFB347"}" font-weight="700">${a.sr}%</tspan></text>`:""}
+        ${a.top.length?`<text x="100" y="780" font-size="38" fill="#8888a0" font-family="sans-serif">費用トップ${a.top.length}</text>`:""}
+        ${rows}
+        ${(a.nw0!=null&&a.nw1!=null)?`<text x="100" y="1210" font-size="36" fill="#c8c8d8" font-family="sans-serif">純資産 <tspan fill="#3498DB" font-weight="700" font-family="monospace">¥${a.nw1.toLocaleString()}</tspan>${a.nw1-a.nw0!==0?` <tspan fill="${a.nw1-a.nw0>=0?"#2ECC71":"#E74C3C"}" font-size="30">（年初から${a.nw1-a.nw0>=0?"+":"−"}¥${Math.abs(a.nw1-a.nw0).toLocaleString()}）</tspan>`:""}</text>`:""}
+        <text x="100" y="1275" font-size="28" fill="#66667a" font-family="sans-serif">マイ決算書 — 完全無料・広告なし・登録不要</text>
+        <text x="100" y="1315" font-size="30" font-weight="700" fill="#FFB347" font-family="sans-serif">${esc(location.host)}</text>
+      </svg>`;
+      await svgShare(svg,`kessansho-${anYear}.png`);
+      showToast("🏛 年間決算書の画像を書き出しました");
     }catch(e:any){ if(e?.name!=="AbortError") alert("画像の作成に失敗しました: "+(e?.message||e)); }
   };
   // 月まるごと削除（誤取込からの復旧用）。Undoで完全復元
@@ -1000,6 +1051,8 @@ export default function Home() {
   // 支出カレンダー（日別合計）
   const [selDay,sSelDay]=useState<number|null>(null);
   const [aPer,sAPer]=useState("6m"); // 資産推移グラフの表示期間
+  const [shAn,sShAn]=useState(false); // 年間決算書シート
+  const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const calData=useMemo(()=>{
     const curMo=cm?parseInt(cm.split("-")[1],10):0;
     const byDay:Record<number,{total:number,items:any[]}>={};
@@ -1137,6 +1190,7 @@ export default function Home() {
             <h2 style={{fontSize:16,fontWeight:700,margin:0,color:"#eee"}}>📑 決算書（P/L・B/S）</h2>
             {(tE>0||tI>0)&&<button onClick={shareImage} style={{background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.25)",color:"#FFB347",padding:"5px 12px",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600}}>📤 画像で保存</button>}
           </div>
+          {(anD.inc>0||anD.exp>0)&&<button onClick={()=>sShAn(true)} style={{width:"100%",background:"linear-gradient(135deg,rgba(255,179,71,0.1),rgba(255,107,107,0.06))",border:"1px solid rgba(255,179,71,0.3)",color:"#FFB347",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:700,margin:"8px 0 10px"}}>🏛 {anYear}年の年間決算書を見る</button>}
           <p style={{fontSize:12,color:"#666",margin:"0 0 14px"}}>あなた専用の損益計算書(P/L)と貸借対照表(B/S)</p>
           {tE===0&&tI===0&&<div style={cs({textAlign:"center",padding:"20px 16px"})}>
             <div style={{fontSize:30,marginBottom:6}}>📭</div>
@@ -1374,6 +1428,55 @@ export default function Home() {
                 <span><span style={{display:"inline-block",width:10,height:3,background:"#3498DB",borderRadius:2,verticalAlign:"middle",marginRight:5}}/>純資産</span>
               </div>
             </div>);})()}
+
+          {/* ── ③ 将来シミュレーション（競合は有料機能。うちは端末内計算で無料）── */}
+          {(tAs>0||netW>0)&&(()=>{
+            // 月々の積立ペース = 記録がある直近6ヶ月の平均収支
+            const ks=Object.keys(D.months).sort().slice(-6);
+            const bals=ks.map(k=>{const m=D.months[k];const i=(m.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);const e=[...(m.manualExp||[]),...(m.cardExp||[])].reduce((s:number,x:any)=>s+x.amount,0);return i-e;}).filter(b=>b!==0);
+            const save=bals.length?Math.round(bals.reduce((s,b)=>s+b,0)/bals.length):0;
+            const r=({"0":0,"3":0.03,"5":0.05} as any)[simR];
+            const pts:number[]=[netW]; let v=netW; let hit10:number|null=null,hit20:number|null=null,hitTgt:number|null=null;
+            for(let m=1;m<=120;m++){ v=v*(1+r/12)+save;
+              if(hit10==null&&v>=1e7)hit10=m; if(hit20==null&&v>=2e7)hit20=m; if(hitTgt==null&&nwTgt>0&&v>=nwTgt)hitTgt=m;
+              if(m%3===0)pts.push(v); }
+            const data=pts.map((p,i)=>({name:(i*3)%24===0?`${(i*3)/12===0?"今":((i*3)/12)+"年"}`:"",value:Math.round(p)}));
+            const at=(m:number)=>Math.round(pts[Math.min(pts.length-1,Math.round(m/3))]);
+            const yr=(m:number)=>{const y=new Date();y.setMonth(y.getMonth()+m);return `${y.getFullYear()}年${y.getMonth()+1}月`;};
+            const mil=(label:string,hit:number|null,goal:number)=> netW>=goal
+              ?<div style={{fontSize:13,color:"#2ECC71",padding:"3px 0"}}>🏁 {label}: 達成済み！</div>
+              :<div style={{fontSize:13,color:hit!=null?"#ccc":"#777",padding:"3px 0"}}>🏁 {label}: {hit!=null?`${yr(hit)}ごろ（あと約${Math.ceil(hit/12*10)/10}年）`:"10年以内には届かないペース"}</div>;
+            return(<div style={cs({borderColor:"rgba(155,89,182,0.25)"})}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 4px",color:"#9B59B6"}}>🔮 将来シミュレーション</h3>
+              <p style={{fontSize:11,color:"#777",margin:"0 0 8px"}}>直近実績の平均積立 <b style={{color:save>=0?"#2ECC71":"#E74C3C"}}>月{save>=0?"+":"−"}¥{Math.abs(save).toLocaleString()}</b> が続いた場合（端末内で計算・外部送信なし）</p>
+              <div style={{display:"flex",gap:6,marginBottom:10}}>
+                {[["0","運用なし"],["3","年3%運用"],["5","年5%運用"]].map(([k,l])=>
+                  <button key={k} onClick={()=>sSimR(k)} style={{flex:1,padding:"7px 0",borderRadius:999,fontSize:12,cursor:"pointer",fontWeight:simR===k?700:400,background:simR===k?"rgba(155,89,182,0.2)":"rgba(255,255,255,0.04)",border:"1px solid "+(simR===k?"rgba(155,89,182,0.55)":"rgba(255,255,255,0.08)"),color:simR===k?"#C39BD3":"#888"}}>{l}</button>)}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                {[["1年後",12],["5年後",60],["10年後",120]].map(([l,m]:any)=>(
+                  <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"8px 4px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#888"}}>{l}</div>
+                    <div style={{fontSize:14,fontWeight:800,fontFamily:"monospace",color:at(m)>=netW?"#2ECC71":"#E74C3C"}}>¥{(Math.abs(at(m))>=1e8?(at(m)/1e8).toFixed(2)+"億":Math.round(at(m)/1e4).toLocaleString()+"万")}</div>
+                  </div>))}
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <AreaChart data={data} margin={{top:6,right:8,left:-14,bottom:0}}>
+                  <defs><linearGradient id="simG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9B59B6" stopOpacity={0.35}/><stop offset="95%" stopColor="#9B59B6" stopOpacity={0}/></linearGradient></defs>
+                  <XAxis dataKey="name" tick={{fill:"#777",fontSize:10}} axisLine={false} tickLine={false} interval={0}/>
+                  <YAxis tick={{fill:"#777",fontSize:10}} axisLine={false} tickLine={false} width={54} tickFormatter={(v:number)=>v>=1e8?(v/1e8).toFixed(1)+"億":v>=1e4?Math.round(v/1e4)+"万":String(v)}/>
+                  <Tooltip content={<TT/>}/>
+                  <Area type="monotone" dataKey="value" stroke="#9B59B6" fill="url(#simG)" strokeWidth={2} name="純資産(予測)"/>
+                </AreaChart>
+              </ResponsiveContainer>
+              <div style={{marginTop:6}}>
+                {mil("資産1,000万円",hit10,1e7)}
+                {mil("老後2,000万円",hit20,2e7)}
+                {nwTgt>0&&nwTgt!==1e7&&nwTgt!==2e7&&mil(`目標 ¥${nwTgt.toLocaleString()}`,hitTgt,nwTgt)}
+              </div>
+              {save<=0&&<p style={{fontSize:12,color:"#FFB347",margin:"8px 0 0"}}>⚠️ 直近の収支が赤字のため、このままだと純資産は増えません。まず月の予算設定から始めましょう。</p>}
+              <p style={{fontSize:10,color:"#666",margin:"8px 0 0"}}>※ 将来の成果を保証するものではありません。利回りは複利・月次で概算しています。</p>
+            </div>);})()}
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(255,255,255,0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:12,color:"#666",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
           {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:at?.l||"他",value:a.amount,color:at?.c||"#888"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none" label={({name,percent}:any)=>percent>0.05?name:""}>{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"#888"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openAs(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
           {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:14,borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span onClick={()=>openLi(a)} style={{color:"#ccc",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"#666",fontSize:12}}>({a.note})</span>} <span style={{color:"#555",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"#666",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
@@ -1584,7 +1687,7 @@ export default function Home() {
       </BS>
 
       <BS open={shUp} onClose={()=>{sShUp(false);sUpPrev(null);}} title="💳 明細をアップロード">
-        <p style={{fontSize:14,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:12,color:"#888"}}>楽天・三井住友・JCB・アメックス・dカード・イオン・エポス・セゾン・三菱UFJニコス・ライフ・オリコ・ビュー・au PAY・PayPay・銀行系デビットなど主要カードの様式に対応（文字コード・日付形式・返品行は自動判別）</span></p>
+        <p style={{fontSize:14,color:"#bbb",margin:"0 0 10px",lineHeight:1.6}}>カード会社からダウンロードした明細（CSV / PDF）を選択してください。<br/><span style={{fontSize:12,color:"#888"}}>楽天・三井住友・JCB・アメックス・dカード・イオン・エポス・セゾン・三菱UFJニコス・ライフ・オリコ・ビュー・au PAY・PayPay・銀行系デビット・PayPayアプリの取引履歴など主要な様式に対応（文字コード・日付形式・返品行・チャージ/ポイント行は自動判別）</span></p>
         <div style={{marginBottom:10}}>
           <label style={{fontSize:12,color:"#888",marginBottom:5,display:"block"}}>取引の入れ先</label>
           <div style={{display:"flex",gap:6}}>
@@ -1634,6 +1737,55 @@ export default function Home() {
           </div>);
         })()}
         {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:14,marginTop:upPrev?10:0}}>{upR}</div>}
+      </BS>
+
+      {/* ── ② 年間決算書（じぶん株主総会）── */}
+      <BS open={shAn} onClose={()=>sShAn(false)} title={`🏛 ${anYear}年 じぶん決算書`}>
+        <p style={{fontSize:12,color:"#888",margin:"0 0 12px"}}>{anYear}年に記録した{anD.ms.length}ヶ月分の総括です（1年分の経営成績）。</p>
+        <div style={cs({padding:"14px 16px"})}>
+          <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 8px",color:"#bbb"}}>損益計算書（P/L・年間）</h4>
+          <SR l="収益（収入合計）" v={anD.inc} c="#2ECC71"/>
+          <SR l="費用（支出合計）" v={anD.exp} c="#FF6B6B"/>
+          <div style={{borderTop:"1px solid rgba(255,255,255,0.1)",margin:"6px 0"}}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <span style={{fontSize:14,fontWeight:700,color:"#eee"}}>当期純利益</span>
+            <span style={{fontSize:22,fontWeight:800,fontFamily:"monospace",color:anD.bal>=0?"#2ECC71":"#E74C3C"}}>{anD.bal>=0?"+":"−"}¥{Math.abs(anD.bal).toLocaleString()}</span>
+          </div>
+          {anD.sr!=null&&<div style={{fontSize:13,color:"#888",marginTop:2}}>貯蓄率 <b style={{color:anD.sr>=20?"#2ECC71":"#FFB347"}}>{anD.sr}%</b></div>}
+        </div>
+        {anD.monthly.length>1&&<div style={cs({padding:"14px 16px"})}>
+          <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 10px",color:"#bbb"}}>月別収支</h4>
+          <div style={{display:"flex",alignItems:"flex-end",gap:4,height:88}}>
+            {anD.monthly.map(mo=>{const mx=Math.max(1,...anD.monthly.map(x=>Math.abs(x.bal)));const h=Math.max(4,Math.abs(mo.bal)/mx*70);
+              return(<div key={mo.m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",gap:3}}>
+                <div style={{width:"70%",height:h,borderRadius:4,background:mo.bal>=0?"#2ECC71":"#E74C3C",opacity:0.85}}/>
+                <span style={{fontSize:10,color:"#777"}}>{parseInt(mo.m,10)}月</span>
+              </div>);})}
+          </div>
+        </div>}
+        {anD.top.length>0&&<div style={cs({padding:"14px 16px"})}>
+          <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 8px",color:"#bbb"}}>費用トップ{anD.top.length}（年間）</h4>
+          {anD.top.map(([c,v]:any)=>{const cfg=EC[c]||{i:"📦",c:"#888"};const w=Math.max(6,v/anD.top[0][1]*100);
+            return(<div key={c} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:3}}><span style={{color:"#ccc"}}>{cfg.i} {c}</span><span style={{fontFamily:"monospace",color:"#eee",fontWeight:600}}>¥{v.toLocaleString()}</span></div>
+              <div style={{height:6,background:"rgba(255,255,255,0.05)",borderRadius:3}}><div style={{height:"100%",width:w+"%",background:cfg.c,borderRadius:3}}/></div>
+            </div>);})}
+        </div>}
+        {(anD.nw0!=null&&anD.nw1!=null)&&<div style={cs({padding:"14px 16px"})}>
+          <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 6px",color:"#bbb"}}>純資産（B/S）</h4>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"monospace",color:"#3498DB"}}>¥{anD.nw1.toLocaleString()}
+            {anD.nw1-anD.nw0!==0&&<span style={{fontSize:13,marginLeft:8,color:anD.nw1-anD.nw0>=0?"#2ECC71":"#E74C3C"}}>年初から{anD.nw1-anD.nw0>=0?"+":"−"}¥{Math.abs(anD.nw1-anD.nw0).toLocaleString()}</span>}
+          </div>
+        </div>}
+        <div style={cs({padding:"14px 16px",borderColor:"rgba(78,205,196,0.2)"})}>
+          <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 6px",color:"#4ECDC4"}}>💬 来期の経営方針（自動提案）</h4>
+          <p style={{fontSize:13,color:"#ccc",margin:0,lineHeight:1.8}}>
+            {anD.bal>=0
+              ?`黒字経営です。費用を3%削減できれば、来期はさらに年¥${Math.round(anD.exp*0.03).toLocaleString()}が純利益に上乗せされます。${anD.top.length?`最大費目は「${anD.top[0][0]}」（¥${anD.top[0][1].toLocaleString()}）。ここが見直しの本丸です。`:""}`
+              :`費用が収益を上回りました（年▲¥${Math.abs(anD.bal).toLocaleString()}）。${anD.top.length?`まず最大費目「${anD.top[0][0]}」（¥${anD.top[0][1].toLocaleString()}）から見直しましょう。`:""}月の予算設定を使うとペース管理がしやすくなります。`}
+          </p>
+        </div>
+        <button onClick={shareAnnual} style={B1}>📤 画像で保存 / 共有</button>
       </BS>
 
       <BS open={shA} onClose={()=>sShA(false)} title={eAsId?"💎 資産を編集":"💎 資産を追加"}><p style={{fontSize:12,color:"#888",margin:"0 0 12px"}}>{eAsId?"金額・メモを変更できます。":"同じ種類は最新の残高で上書きされます。"}</p><FI label="種類" type="select" value={fAT} onChange={sfAT}>{AT.map(t=><option key={t.id} value={t.id}>{t.i} {t.l}</option>)}</FI><FI label="残高" type="amount" value={fAA} onChange={sfAA} onEnter={addAs}/><FI label="メモ" value={fAN} onChange={sfAN} placeholder="例: SBI証券"/><button onClick={addAs} style={B1}>{eAsId?"保存":"追加"}</button></BS>
