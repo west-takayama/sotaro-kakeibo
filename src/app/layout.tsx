@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_URL } from "./site";
 
 const APP_DESC = "カード明細(PDF/CSV)を自動仕分けし、自分専用の決算書(P/L・B/S)ができる無料の家計簿・資産管理アプリ。データは端末内のみ・広告なし・登録不要。";
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "マイ決算書 — 自分専用の決算書ができる家計簿・資産管理アプリ",
   description: APP_DESC,
   manifest: "/manifest.json",
@@ -17,13 +19,18 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "マイ決算書", description: APP_DESC, images: ["/og.png"] },
 };
 export const viewport: Viewport = {
-  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: "#0b0b1a",
+  // viewportFit: "cover" がないとノッチ機種で env(safe-area-inset-*) が常に0になり、下部ナビがホームバーと重なる
+  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: "#0b0b1a", viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja">
-      <head><link rel="apple-touch-icon" href="/icon-192.png" /></head>
+    <html lang="ja" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* テーマを描画前に適用（ライト利用者に一瞬ダークが見えるのを防ぐ） */}
+        <script dangerouslySetInnerHTML={{__html:"try{if(localStorage.getItem('kakeibo-theme')==='light')document.documentElement.dataset.theme='light';}catch(e){}"}} />
+      </head>
       <body>{children}</body>
     </html>
   );

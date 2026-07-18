@@ -1,5 +1,26 @@
+:root {
+  --bg:#0b0b1a; --bg2:#0f0f22; --sheet:#14142a; --pop:#1c1c30;
+  --t1:#eeeeee; --t2:#dddddd; --t3:#cccccc; --t4:#bbbbbb; --t5:#aaaaaa;
+  --t6:#999999; --t7:#888888; --t8:#777777; --t9:#666666; --t10:#555555;
+  --bd:#333333; --bd2:#4a4a5e; --wrgb:255,255,255; --red:#FF8E8E;
+}
+/* ライトテーマ（設定で切替・localStorageに保存） */
+[data-theme="light"] {
+  --bg:#f2f3f8; --bg2:#ffffff; --sheet:#ffffff; --pop:#ffffff;
+  --t1:#15152a; --t2:#232338; --t3:#333348; --t4:#454558; --t5:#565668;
+  --t6:#676778; --t7:#787888; --t8:#888896; --t9:#9898a6; --t10:#a8a8b4;
+  --bd:#d8d8e2; --bd2:#c8c8d4; --wrgb:25,25,60; --red:#D9453D;
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-body { margin: 0; background: #0b0b1a; color: #e0e0e0; font-family: "Hiragino Sans", -apple-system, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+html { -webkit-text-size-adjust: 100%; }
+/* ダブルタップズーム由来の300ms遅延をなくし、タップの反応を速くする */
+button, select, input, a { touch-action: manipulation; }
+button:active { opacity: 0.7; }
+body { margin: 0; background: var(--bg); color: var(--t2); transition: background 0.25s; font-family: "Hiragino Sans", -apple-system, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--bd); border-radius: 2px; }
 input:focus, select:focus { border-color: #FF6B6B !important; outline: none; }
+
+/* ボトムシートの開閉アニメーション */
+@keyframes bsUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes bsFade { from { opacity: 0; } to { opacity: 1; } }
