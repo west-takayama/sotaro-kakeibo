@@ -1054,6 +1054,43 @@ export default function Home() {
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
+  // ═══ 電卓入力（Zaim式・最少タップで手入力）═══
+  const [calcMode,sCalcMode]=useState<"exp"|"inc">("exp");
+  const [calcView,sCalcView]=useState<"pad"|"cat">("pad");
+  const [calcQ,sCalcQ]=useState("");  // 入力中の式（例 "1200+800"）
+  const calcPush=(t:string)=>{
+    vib(5);
+    sCalcQ(q=>{
+      if(t==="⌫") return q.slice(0,-1);
+      if(/^[÷×+−]$/.test(t)){ if(!q) return q; if(/[÷×+−.]$/.test(q)) return q.slice(0,-1)+t; return q+t; }
+      if(t==="."){ const seg=q.split(/[÷×+−]/).pop()||""; if(seg.includes(".")) return q; return q&&!/[÷×+−]$/.test(q)?q+".":q+"0."; }
+      if(t==="00"){ if(!q||/[÷×+−.]$/.test(q)) return q; return (q+"00").slice(0,12); }
+      return (q+t).slice(0,12);
+    });
+  };
+  // 電卓式に左から順に計算（一般的な電卓アプリと同じ挙動）
+  const calcEval=(q:string):number=>{
+    const nums=q.split(/[÷×+−]/).map(x=>parseFloat(x)).filter(n=>!isNaN(n));
+    const ops=q.replace(/[^÷×+−]/g,"").split("").filter(Boolean);
+    if(!nums.length) return 0;
+    let v=nums[0];
+    for(let i=0;i<ops.length&&i+1<nums.length;i++){const b=nums[i+1];
+      if(ops[i]==="+")v+=b; else if(ops[i]==="−")v-=b; else if(ops[i]==="×")v*=b; else if(ops[i]==="÷")v=b?v/b:v;}
+    return Math.round(v);
+  };
+  const calcAdd=()=>{
+    const amt=calcEval(calcQ);
+    if(!amt||amt<=0){showToast("⚠️ 金額を入力してください");return;}
+    const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});
+    if(calcMode==="exp"){
+      uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:amt,category:fEC,source:"manual",id:Date.now()}]}));
+    }else{
+      uM((m:any)=>({...m,incomes:[...m.incomes,{type:fIT,amount:amt,note:fEN,id:Date.now()}]}));
+    }
+    vib(12);
+    showToast(`✅ ${calcMode==="exp"?"支出":"収入"} ¥${amt.toLocaleString()} を追加（連続入力OK）`);
+    sCalcQ("");sfEN("");
+  };
   // ═══ テーマ（背景色 黒/白）═══
   const [theme,sTheme]=useState("dark");
   const applyTheme=useCallback((t:string)=>{
@@ -1552,6 +1589,7 @@ export default function Home() {
             {allE.some((t:any)=>t.category==="その他")&&<button onClick={reCat} style={{background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.25)",color:"#9B59B6",padding:"4px 10px",borderRadius:6,fontSize:12,cursor:"pointer",fontWeight:600}}>🪄 その他を再仕分け</button>}
           </div>
           <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>内容タップで編集 ・ カテゴリタップで変更（同じ店は次回から自動仕分け）</p>
+          <button onClick={()=>sShE(true)} style={{width:"100%",background:"rgba(255,107,107,0.08)",border:"1px dashed rgba(255,107,107,0.35)",color:"#FF6B6B",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:700,marginBottom:10}}>🖩 電卓で手入力（支出・収入）</button>
           {srt.length>0&&<div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:4,WebkitOverflowScrolling:"touch"}}>
             {srt.map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"var(--t7)"};const on=fCat===cat;return(
               <button key={cat} onClick={()=>sFCat(on?"":cat)} style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"9px 13px",borderRadius:12,cursor:"pointer",background:on?cfg.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(on?cfg.c+"aa":"rgba(var(--wrgb),0.08)")}}>
@@ -1743,24 +1781,51 @@ export default function Home() {
       {/* Modals */}
       <BS open={shI} onClose={()=>{sShI(false);sEInId(null);}} title={eInId!=null?"💼 収入を編集":"💼 収入を追加"}><div style={{marginBottom:12}}><label style={{fontSize:12,color:"var(--t7)",display:"block",marginBottom:5}}>種類</label><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{IT.map(t=><button key={t.id} onClick={()=>sfIT(t.id)} style={{padding:"10px 14px",borderRadius:10,fontSize:14,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"20":"rgba(var(--wrgb),0.04)",border:"1px solid "+(fIT===t.id?t.c+"50":"var(--bd)"),color:fIT===t.id?t.c:"var(--t5)"}}>{t.i} {t.l}</button>)}</div></div><FI label="金額" type="amount" value={fIA} onChange={sfIA} onEnter={addI}/><FI label="メモ" value={fIN} onChange={sfIN} placeholder="例: フリーランス"/><button onClick={addI} style={B1}>{eInId!=null?"保存":"追加"}</button></BS>
 
-      <BS open={shE} onClose={()=>sShE(false)} title="💸 支出を追加">
-        <div style={{marginBottom:14}}>
-          <label style={{fontSize:13,color:"var(--t7)",marginBottom:8,display:"block"}}>カテゴリー</label>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,maxHeight:236,overflow:"auto",paddingRight:2}}>
-            {Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>sfEC(c)} style={{padding:"12px 4px 10px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(fEC===c?v.c+"aa":"rgba(var(--wrgb),0.09)"),color:fEC===c?v.c:"var(--t4)",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-              <span style={{fontSize:23,lineHeight:1}}>{v.i}</span>
-              <span style={{fontSize:11.5,fontWeight:fEC===c?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{c.replace(/（/,"(").replace(/）/,")")}</span>
-            </button>)}
+      <BS open={shE} onClose={()=>{sShE(false);sCalcView("pad");}} title="🖩 かんたん入力">
+        {/* 支出/収入トグル */}
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <button onClick={()=>{sCalcMode("exp");sCalcView("pad");}} style={{flex:1,padding:"11px 0",borderRadius:999,fontSize:14,fontWeight:calcMode==="exp"?800:400,cursor:"pointer",background:calcMode==="exp"?"rgba(255,107,107,0.18)":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(calcMode==="exp"?"rgba(255,107,107,0.6)":"var(--bd)"),color:calcMode==="exp"?"#FF6B6B":"var(--t6)"}}>💸 支出</button>
+          <button onClick={()=>{sCalcMode("inc");sCalcView("pad");}} style={{flex:1,padding:"11px 0",borderRadius:999,fontSize:14,fontWeight:calcMode==="inc"?800:400,cursor:"pointer",background:calcMode==="inc"?"rgba(46,204,113,0.18)":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(calcMode==="inc"?"rgba(46,204,113,0.6)":"var(--bd)"),color:calcMode==="inc"?"#2ECC71":"var(--t6)"}}>💼 収入</button>
+        </div>
+        {/* 金額ディスプレイ */}
+        <div style={{background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:14,padding:"12px 16px",marginBottom:10,textAlign:"right",minHeight:64}}>
+          {/[÷×+−]/.test(calcQ)&&<div style={{fontSize:13,color:"var(--t7)",fontFamily:"monospace",letterSpacing:1}}>{calcQ}</div>}
+          <div style={{fontSize:32,fontWeight:800,fontFamily:"monospace",color:calcMode==="exp"?"#FF6B6B":"#2ECC71",lineHeight:1.2}}>¥{calcEval(calcQ).toLocaleString()}</div>
+        </div>
+        {calcView==="cat"?(
+          <div>
+            <p style={{fontSize:12,color:"var(--t7)",margin:"0 0 8px"}}>{calcMode==="exp"?"カテゴリを選択":"収入の種類を選択"}</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,maxHeight:300,overflow:"auto"}}>
+              {calcMode==="exp"
+                ?Object.entries(EC).map(([c,v])=><button key={c} onClick={()=>{sfEC(c);sCalcView("pad");vib(6);}} style={{padding:"12px 4px 10px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",background:fEC===c?v.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(fEC===c?v.c+"aa":"rgba(var(--wrgb),0.09)"),color:fEC===c?v.c:"var(--t4)",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:23,lineHeight:1}}>{v.i}</span><span style={{fontSize:11.5,fontWeight:fEC===c?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{c.replace(/（/,"(").replace(/）/,")")}</span></button>)
+                :IT.map(t=><button key={t.id} onClick={()=>{sfIT(t.id);sCalcView("pad");vib(6);}} style={{padding:"14px 4px 12px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",background:fIT===t.id?t.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(fIT===t.id?t.c+"aa":"rgba(var(--wrgb),0.09)"),color:fIT===t.id?t.c:"var(--t4)",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}><span style={{fontSize:23,lineHeight:1}}>{t.i}</span><span style={{fontSize:12,fontWeight:fIT===t.id?700:500}}>{t.l}</span></button>)}
+            </div>
           </div>
-        </div>
-        <FI label="金額" type="amount" value={fEA} onChange={sfEA} onEnter={addE}/>
-        <div style={{display:"flex",flexWrap:"wrap",gap:5,margin:"-4px 0 12px"}}>
-          {[100,500,1000,5000].map(a=><button key={a} onClick={()=>sfEA(String((Number(fEA)||0)+a))} style={{padding:"9px 13px",borderRadius:999,fontSize:14,cursor:"pointer",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",color:"var(--t4)",fontFamily:"monospace"}}>+¥{a.toLocaleString()}</button>)}
-          {fEA&&<button onClick={()=>sfEA("")} style={{padding:"9px 13px",borderRadius:999,fontSize:14,cursor:"pointer",background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.2)",color:"#E74C3C"}}>クリア</button>}
-        </div>
-        <FI label="日付（空欄で今日）" value={fED} onChange={sfED} placeholder="例: 03/15"/><FI label="内容" value={fEN} onChange={sfEN} placeholder="例: ランチ代"/>
-        <button onClick={addE} style={B1}>追加（連続入力OK）</button>
-        <button onClick={()=>sShE(false)} style={{background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",color:"var(--t6)",padding:"9px 0",borderRadius:10,fontSize:14,cursor:"pointer",width:"100%",marginTop:8}}>閉じる</button>
+        ):(
+          <div>
+            {/* メモ＋日付（任意・最少入力） */}
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <input value={fEN} onChange={(e:any)=>sfEN(e.target.value)} placeholder="メモ（任意）" style={{flex:1.6,boxSizing:"border-box",padding:"10px 12px",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:10,color:"var(--t1)",fontSize:16,outline:"none",minWidth:0}}/>
+              <input value={fED} onChange={(e:any)=>sfED(e.target.value)} placeholder="今日" aria-label="日付（空欄で今日）" style={{flex:1,boxSizing:"border-box",padding:"10px 8px",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:10,color:"var(--t1)",fontSize:16,outline:"none",textAlign:"center",minWidth:0}}/>
+            </div>
+            {/* キーパッド */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:10}}>
+              {["7","8","9","÷","4","5","6","×","1","2","3","−","00","0",".","+"].map(k=>{
+                const op=/^[÷×+−.]$/.test(k);
+                return <button key={k} onClick={()=>calcPush(k)} style={{padding:"15px 0",borderRadius:14,fontSize:op?24:23,fontWeight:op?800:600,cursor:"pointer",background:"rgba(var(--wrgb),0.045)",border:"1px solid rgba(var(--wrgb),0.07)",color:op?"#2ECC71":"var(--t1)",lineHeight:1,fontFamily:"inherit"}}>{k}</button>;})}
+            </div>
+            {/* アクション行: カテゴリ / 追加 / ⌫ */}
+            <div style={{display:"grid",gridTemplateColumns:"1.25fr 1.9fr 0.85fr",gap:8}}>
+              <button onClick={()=>sCalcView("cat")} style={{padding:"10px 2px",borderRadius:14,cursor:"pointer",background:"rgba(var(--wrgb),0.045)",border:"1.5px solid "+(calcMode==="exp"?(EC[fEC]?.c||"#888")+"66":(IT.find(t=>t.id===fIT)?.c||"#888")+"66"),display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <span style={{fontSize:20,lineHeight:1}}>{calcMode==="exp"?(EC[fEC]?.i||"🏷️"):(IT.find(t=>t.id===fIT)?.i||"💰")}</span>
+                <span style={{fontSize:10.5,color:calcMode==="exp"?(EC[fEC]?.c||"var(--t5)"):(IT.find(t=>t.id===fIT)?.c||"var(--t5)"),fontWeight:700,maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{calcMode==="exp"?fEC.replace(/（/,"(").replace(/）/,")"):(IT.find(t=>t.id===fIT)?.l||"")}</span>
+              </button>
+              <button onClick={calcAdd} style={{borderRadius:14,border:"none",cursor:"pointer",background:calcMode==="exp"?"linear-gradient(135deg,#FF6B6B,#FF8E53)":"linear-gradient(135deg,#2ECC71,#27AE60)",color:"#fff",fontSize:17,fontWeight:800}}>追加</button>
+              <button aria-label="1文字削除" onClick={()=>calcPush("⌫")} style={{borderRadius:14,cursor:"pointer",background:"rgba(231,76,60,0.1)",border:"1px solid rgba(231,76,60,0.25)",color:"#E74C3C",fontSize:20,fontWeight:700}}>⌫</button>
+            </div>
+            <p style={{fontSize:11,color:"var(--t9)",margin:"8px 0 0",textAlign:"center"}}>＋−×÷で計算しながら入力できます（例: 1200+800）。追加後も続けて入力OK</p>
+          </div>
+        )}
       </BS>
 
       <BS open={shUp} onClose={()=>{sShUp(false);sUpPrev(null);}} title="💳 明細をアップロード">
