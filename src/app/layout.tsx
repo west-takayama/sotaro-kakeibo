@@ -23,8 +23,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja">
-      <head><link rel="apple-touch-icon" href="/icon-192.png" /></head>
+    <html lang="ja" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* テーマを描画前に適用（ライト利用者に一瞬ダークが見えるのを防ぐ） */}
+        <script dangerouslySetInnerHTML={{__html:"try{if(localStorage.getItem('kakeibo-theme')==='light')document.documentElement.dataset.theme='light';}catch(e){}"}} />
+      </head>
       <body>{children}</body>
     </html>
   );

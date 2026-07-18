@@ -1444,7 +1444,7 @@ export default function Home() {
                 const amt=v?("-"+v.total.toLocaleString()):"";
                 return(<div key={d} onClick={()=>v&&sSelDay(sel?null:d)} style={{minHeight:46,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",gap:1,padding:"4px 1px 3px",borderRadius:8,cursor:v?"pointer":"default",background:sel?"rgba(255,107,107,0.18)":v?"rgba(var(--wrgb),0.045)":"rgba(var(--wrgb),0.015)",border:sel?"1px solid rgba(255,107,107,0.6)":"1px solid transparent"}}>
                   <span style={{fontSize:12,color:dow===0?"#E74C3C":dow===6?"#3498DB":v?"var(--t2)":"var(--t10)",fontWeight:v?700:400,lineHeight:1}}>{d}</span>
-                  {v&&<span style={{fontSize:amt.length>7?8:9,color:"#FF8E8E",fontFamily:"monospace",fontWeight:600,lineHeight:1.2,letterSpacing:"-0.3px"}}>{amt}</span>}
+                  {v&&<span style={{fontSize:amt.length>7?8:9,color:"var(--red)",fontFamily:"monospace",fontWeight:600,lineHeight:1.2,letterSpacing:"-0.3px"}}>{amt}</span>}
                 </div>);})}
             </div>
             {selDay&&calData.byDay[selDay]&&(()=>{const [y,mo]=cm.split("-").map(Number);const dow="日月火水木金土"[new Date(y,mo-1,selDay).getDay()];const day=calData.byDay[selDay];return(
