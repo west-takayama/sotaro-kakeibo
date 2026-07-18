@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_URL } from "./site";
 
 const APP_DESC = "カード明細(PDF/CSV)を自動仕分けし、自分専用の決算書(P/L・B/S)ができる無料の家計簿・資産管理アプリ。データは端末内のみ・広告なし・登録不要。";
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "マイ決算書 — 自分専用の決算書ができる家計簿・資産管理アプリ",
   description: APP_DESC,
   manifest: "/manifest.json",
