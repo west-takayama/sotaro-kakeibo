@@ -276,7 +276,7 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
 }
 
 // ═══ 初期状態（デモデータなし・まっさらな状態から開始）═══
-const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
+const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], funds:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
 // ローカル時刻基準の年月・年月日（UTC基準だと日本の月初0時〜9時に月がズレる）
 const localYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const localYMD = (d = new Date()) => `${localYM(d)}-${String(d.getDate()).padStart(2,"0")}`;
@@ -1054,6 +1054,34 @@ export default function Home() {
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
+  // ═══ 目標別つみたて（袋分け貯金）═══
+  const [shFund,sShFund]=useState(false);
+  const [eFdId,sEFdId]=useState<any>(null);
+  const [fFL,sfFL]=useState(""); const [fFT,sfFT]=useState(""); const [fFM,sfFM]=useState(""); const [fFI,sfFI]=useState("🎯"); const [fFX,sfFX]=useState("");
+  const fundSaved=(f:any)=>Object.values(f.log||{}).reduce((a:number,b:any)=>a+Number(b||0),0);
+  const openFund=(f?:any)=>{
+    if(f){sEFdId(f.id);sfFL(f.label);sfFT(String(f.target||""));sfFM(String(f.monthly||""));sfFI(f.i||"🎯");}
+    else{sEFdId(null);sfFL("");sfFT("");sfFM("");sfFI("🎯");}
+    sfFX("");sShFund(true);
+  };
+  const saveFund=()=>{
+    if(!fFL.trim()||!fFT||Number(fFT)<=0){showToast("⚠️ 名前と目標額を入力してください");return;}
+    const base={label:fFL.trim(),target:Number(fFT),monthly:Number(fFM)||0,i:fFI};
+    sD((p:any)=>({...p,funds:eFdId!=null
+      ?(p.funds||[]).map((f:any)=>f.id===eFdId?{...f,...base}:f)
+      :[...(p.funds||[]),{...base,id:Date.now(),log:{}}]}));
+    vib(10);showToast(eFdId!=null?"✏️ 目標を更新しました":"✅ 目標を追加しました");sShFund(false);
+  };
+  const delFund=(id:any)=>{if(!confirm("この目標を削除しますか？（積立の記録も消えます）"))return;sD((p:any)=>({...p,funds:(p.funds||[]).filter((f:any)=>f.id!==id)}));sShFund(false);showToast("🗑 目標を削除しました");};
+  const allocFund=(id:any,amt:number)=>{
+    if(!amt||amt<=0)return;
+    sD((p:any)=>({...p,funds:(p.funds||[]).map((f:any)=>f.id===id?{...f,log:{...(f.log||{}),[cm]:(Number((f.log||{})[cm])||0)+amt}}:f)}));
+    vib(12);showToast(`✅ ¥${amt.toLocaleString()} を振り分けました`);
+  };
+  const undoAlloc=(id:any)=>{
+    sD((p:any)=>({...p,funds:(p.funds||[]).map((f:any)=>{if(f.id!==id)return f;const log={...(f.log||{})};delete log[cm];return{...f,log};})}));
+    showToast("↩ 今月の振り分けを取り消しました");
+  };
   // ═══ 電卓入力（Zaim式・最少タップで手入力）═══
   const [calcMode,sCalcMode]=useState<"exp"|"inc">("exp");
   const [calcView,sCalcView]=useState<"pad"|"cat">("pad");
@@ -1479,6 +1507,37 @@ export default function Home() {
           </div>
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#3498DB"}}>🎯 純資産の目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{nwTgt>0?"変更":"設定"}</button></div>{nwTgt>0?<div style={{marginTop:8}}><div style={{height:10,background:"rgba(var(--wrgb),0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:nwP+"%",background:nwP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"var(--t7)"}}><span>純資産 ¥{netW.toLocaleString()} / ¥{nwTgt.toLocaleString()}</span><span style={{color:nwP>=100?"#2ECC71":"#3498DB",fontWeight:600}}>{nwP.toFixed(0)}%{netW<nwTgt?` ・あと¥${(nwTgt-netW).toLocaleString()}`:""}</span></div></div>:<p style={{fontSize:12,color:"var(--t9)",margin:"6px 0 0"}}>目標の純資産額を設定すると、達成率と「あといくら」が表示されます。</p>}</div>
           <div style={cs()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#FFB347"}}>🎯 貯金目標</h3><button onClick={()=>{sfGA(String(D.goal.target||""));sfGL(D.goal.label);sfNWA(String(D.goal.nw||""));sShG(true);}} style={{background:"rgba(255,179,71,0.1)",border:"1px solid rgba(255,179,71,0.2)",color:"#FFB347",padding:"3px 8px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>{D.goal.target>0?"変更":"設定"}</button></div>{D.goal.target>0&&<div style={{marginTop:8}}><div style={{height:10,background:"rgba(var(--wrgb),0.06)",borderRadius:5,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",width:gP+"%",background:gP>=100?"#2ECC71":"linear-gradient(90deg,#3498DB,#2ECC71)",borderRadius:5}}/></div><div style={{fontSize:12,color:"var(--t7)"}}>{gP.toFixed(0)}%（¥{yD.yB.toLocaleString()} / ¥{D.goal.target.toLocaleString()}）</div></div>}</div>
+          {/* ── 目標別つみたて（袋分け貯金）── */}
+          <div style={cs({borderColor:"rgba(78,205,196,0.22)"})}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#4ECDC4"}}>🪣 目標別つみたて（袋分け）</h3>
+              <button onClick={()=>openFund()} style={{background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.35)",color:"#4ECDC4",padding:"6px 13px",borderRadius:999,fontSize:13,cursor:"pointer",fontWeight:700}}>＋ 追加</button>
+            </div>
+            {(D.funds||[]).length===0&&<p style={{fontSize:13,color:"var(--t7)",margin:0,lineHeight:1.7}}>「✈️ 旅行資金」「🚗 車」のように目標を作り、<b style={{color:"#4ECDC4"}}>毎月それぞれに振り分けて</b>積み立てを記録できます。口座のお金を実際に動かす必要はありません（記録用の袋分けです）。</p>}
+            {(D.funds||[]).map((f:any,fi:number)=>{
+              const saved=fundSaved(f); const alloc=Number((f.log||{})[cm])||0; const pct=f.target>0?Math.min(100,saved/f.target*100):0;
+              const done=saved>=f.target; const left=Math.max(0,f.target-saved);
+              const monLeft=!done&&f.monthly>0?Math.ceil(left/f.monthly):null;
+              const col=["#4ECDC4","#FFB347","#9B59B6","#3498DB","#FF6B6B","#2ECC71"][fi%6];
+              return(<div key={f.id} style={{padding:"10px 0",borderTop:fi>0?"1px solid rgba(var(--wrgb),0.05)":"none"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                  <span onClick={()=>openFund(f)} style={{fontSize:14,fontWeight:700,color:"var(--t2)",cursor:"pointer"}}>{f.i} {f.label} <span style={{color:"var(--t10)",fontSize:11}}>✎</span></span>
+                  <span style={{fontFamily:"monospace",fontSize:13,color:done?"#2ECC71":col,fontWeight:700}}>¥{saved.toLocaleString()}<span style={{color:"var(--t8)",fontWeight:400}}> / ¥{f.target.toLocaleString()}</span></span>
+                </div>
+                <div style={{height:9,background:"rgba(var(--wrgb),0.07)",borderRadius:5,overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:pct+"%",background:done?"#2ECC71":`linear-gradient(90deg,${col}88,${col})`,borderRadius:5,transition:"width 0.4s"}}/></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,color:"var(--t8)"}}>{done?"達成！🎉":f.monthly>0?`毎月¥${f.monthly.toLocaleString()}・あと約${monLeft}ヶ月`:`残り¥${left.toLocaleString()}`}</span>
+                  {!done&&(alloc>0
+                    ?<button onClick={()=>undoAlloc(f.id)} style={{background:"rgba(46,204,113,0.12)",border:"1px solid rgba(46,204,113,0.35)",color:"#2ECC71",padding:"7px 12px",borderRadius:999,fontSize:12,cursor:"pointer",fontWeight:700}}>✓ 今月¥{alloc.toLocaleString()}（取消）</button>
+                    :f.monthly>0&&<button onClick={()=>allocFund(f.id,f.monthly)} style={{background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.4)",color:"#4ECDC4",padding:"7px 12px",borderRadius:999,fontSize:12,cursor:"pointer",fontWeight:700}}>＋ 今月分 ¥{f.monthly.toLocaleString()}</button>)}
+                </div>
+              </div>);})}
+            {(D.funds||[]).length>0&&(()=>{const tm=(D.funds||[]).reduce((a:number,f:any)=>a+(fundSaved(f)>=f.target?0:(f.monthly||0)),0);const ts=(D.funds||[]).reduce((a:number,f:any)=>a+fundSaved(f),0);return(
+              <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(var(--wrgb),0.08)",paddingTop:8,marginTop:4,fontSize:13}}>
+                <span style={{color:"var(--t7)"}}>毎月の振り分け合計 <b style={{color:"#4ECDC4",fontFamily:"monospace"}}>¥{tm.toLocaleString()}</b></span>
+                <span style={{color:"var(--t7)"}}>積立済み <b style={{color:"#2ECC71",fontFamily:"monospace"}}>¥{ts.toLocaleString()}</b></span>
+              </div>);})()}
+          </div>
           {badges.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FFB347"}}>🏅 実績バッジ</h3><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{badges.map(b=><span key={b} style={{fontSize:12,fontWeight:700,color:"#FFB347",background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.25)",padding:"6px 12px",borderRadius:999}}>{b}</span>)}</div></div>}
           <button onClick={()=>sPg("assets")} style={{width:"100%",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.25)",color:"#C39BD3",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:600,marginBottom:14}}>🔮 将来シミュレーションで到達時期を見る ›</button>
           <ACmt re={/目標|純資産|貯蓄|投資|黒字/}/>
@@ -1883,6 +1942,26 @@ export default function Home() {
           </div>);
         })()}
         {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:14,marginTop:upPrev?10:0}}>{upR}</div>}
+      </BS>
+
+      {/* ── 目標別つみたての追加/編集 ── */}
+      <BS open={shFund} onClose={()=>sShFund(false)} title={eFdId!=null?"🪣 目標を編集":"🪣 目標を追加"}>
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:11,color:"var(--t7)",marginBottom:6,display:"block"}}>アイコン</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {["🎯","✈️","🚗","🏠","💍","👶","🎓","💻","🎁","🛡️","🏖️","💰"].map(i=>
+              <button key={i} onClick={()=>sfFI(i)} style={{width:46,height:46,borderRadius:12,fontSize:22,cursor:"pointer",background:fFI===i?"rgba(78,205,196,0.18)":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(fFI===i?"rgba(78,205,196,0.6)":"var(--bd)"),display:"flex",alignItems:"center",justifyContent:"center"}}>{i}</button>)}
+          </div>
+        </div>
+        <FI label="目標の名前" type="text" value={fFL} onChange={sfFL} placeholder="例: 沖縄旅行、車の頭金"/>
+        <FI label="目標額" type="amount" value={fFT} onChange={sfFT} placeholder="300000"/>
+        <FI label="毎月の振り分け額（任意）" type="amount" value={fFM} onChange={sfFM} placeholder="10000"/>
+        {eFdId!=null&&<div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:4}}>
+          <div style={{flex:1}}><FI label="任意の金額を今月分に追加" type="amount" value={fFX} onChange={sfFX} placeholder="5000"/></div>
+          <button onClick={()=>{if(Number(fFX)>0){allocFund(eFdId,Number(fFX));sfFX("");}}} style={{background:"rgba(78,205,196,0.15)",border:"1px solid rgba(78,205,196,0.4)",color:"#4ECDC4",padding:"12px 16px",borderRadius:10,fontSize:14,cursor:"pointer",fontWeight:700,marginBottom:12,flexShrink:0}}>追加</button>
+        </div>}
+        <button onClick={saveFund} style={B1}>{eFdId!=null?"保存":"✅ 目標を作成"}</button>
+        {eFdId!=null&&<button onClick={()=>delFund(eFdId)} style={{width:"100%",background:"none",border:"1px solid rgba(231,76,60,0.3)",color:"#E74C3C",padding:"11px 0",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:8}}>🗑 この目標を削除</button>}
       </BS>
 
       {/* ── ハンバーガーメニュー（全ページ一覧）── */}
