@@ -214,13 +214,19 @@ async function extractPdfText(file: File): Promise<string> {
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const tc = await page.getTextContent();
-    const rows: Record<number, any[]> = {};
-    for (const it of tc.items) {
-      if (!("str" in it) || !it.str) continue;
-      const y = Math.round(it.transform[5]); // 同じ高さ＝同じ行
-      (rows[y] = rows[y] || []).push(it);
+    // 同じ高さ＝同じ行。ベースラインの微妙なズレ(±2px)は同一行に寄せる
+    const clusters: { y: number; items: any[] }[] = [];
+    const its = tc.items.filter((it: any) => ("str" in it) && it.str);
+    its.sort((a: any, b: any) => b.transform[5] - a.transform[5]);
+    for (const it of its) {
+      const y = it.transform[5];
+      const c = clusters.length ? clusters[clusters.length - 1] : null;
+      if (c && Math.abs(c.y - y) <= 2) c.items.push(it);
+      else clusters.push({ y, items: [it] });
     }
-    const ys = Object.keys(rows).map(Number).sort((a, b) => b - a); // PDFは下が原点
+    const rows: Record<number, any[]> = {};
+    clusters.forEach((c, i) => { rows[i] = c.items; });
+    const ys = Object.keys(rows).map(Number).sort((a, b) => a - b); // clusterは上から順に作成済み
     for (const y of ys) {
       const items = rows[y].sort((a, b) => a.transform[4] - b.transform[4]); // 左→右
       let line = ""; let prevEnd: number | null = null;
@@ -258,11 +264,21 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
     txns.push({ id: Date.now() + Math.random() * 1e4, date, description: store || "不明", amount, category: autoCategory(store, rules), source: "card", ym });
   }
   if (txns.length) return txns;
-  // ② 汎用: 行頭が日付・行内の右端に金額・間が店名（三井住友/JCB/イオン等のWeb明細PDFはこの並びが多い）
+  // ② 汎用: 行頭が日付・行内の右端に金額・間が店名（三井住友/JCB/イオン/アメックス等のWeb明細PDFはこの並びが多い）
   for (const raw of text.split("\n")) {
-    const toks = raw.trim().split(/[\s\t]+/).filter(Boolean);
+    let toks = raw.trim().split(/[\s\t]+/).filter(Boolean);
+    // PDF内部で「2026年」「6月」「13日」のように日付が分断されている場合は結合する
+    for (let i = 0; i < Math.min(2, toks.length - 1); i++) {
+      if (/^\d{1,2}月$/.test(toks[i]) && /^\d{1,2}日$/.test(toks[i + 1])) {
+        const pre = i > 0 && /^\d{4}年$/.test(toks[i - 1]) ? 1 : 0;
+        toks = [...toks.slice(0, i - pre), (pre ? toks[i - 1] : "") + toks[i] + toks[i + 1], ...toks.slice(i + 2)];
+        break;
+      }
+    }
     if (toks.length < 3) continue;
-    const dt = parseDateTok(toks[0]);
+    // 日付は行頭が基本だが、行番号などが先頭に付く様式のため2番目まで探す
+    let dt = parseDateTok(toks[0]);
+    if (!dt && toks.length >= 4 && /^[\d※*]+$/.test(toks[0])) { const d2 = parseDateTok(toks[1]); if (d2) { dt = d2; toks = toks.slice(1); } }
     if (!dt) continue;
     let amtIdx = -1, amount: number | null = null;
     for (let i = toks.length - 1; i >= 1; i--) { const a = parseAmtTok(toks[i]); if (a != null) { amtIdx = i; amount = a; break; } }
@@ -726,9 +742,19 @@ export default function Home() {
       let txns = isPdf ? parsePdfStatement(text, D.rules) : parseCSV(text, D.rules);
       if (txns.length === 0) txns = parseCSV(text, D.rules); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
-        sUpR(isPdf ? "❌ PDFから取引データを読み取れませんでした。画像(スキャン)のPDFは読み取れません。CSVもお試しください。" : "❌ 取引データを抽出できませんでした。");
+        if (isPdf) {
+          const chars = text.replace(/\s/g, "").length;
+          const lines = text.split("\n").filter(l => l.trim()).length;
+          if (chars < 30) sUpR("❌ このPDFには文字情報がほぼ含まれていません（画像スキャン型のPDF）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックス等の主要カードのCSVに対応しています）。");
+          else sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。この様式のスクリーンショット（金額は隠してOK）を開発側に送っていただければ対応します。`);
+        } else sUpR("❌ 取引データを抽出できませんでした。");
       } else sUpPrev(txns);
-    } catch(e:any) { sUpR("❌ 読み取りエラー: "+(e?.message||e)); }
+    } catch(e:any) {
+      const msg = String(e?.name||"") === "PasswordException" || /password/i.test(String(e?.message||""))
+        ? "❌ このPDFはパスワードで保護されています。パスワードを解除したPDFか、CSV形式でお試しください。"
+        : "❌ 読み取りエラー: "+(e?.message||e);
+      sUpR(msg);
+    }
     sUpL(false);
   };
   // プレビューでのカテゴリ修正: 同じ店はまとめて変更し、確定時に学習ルールへ記録する
