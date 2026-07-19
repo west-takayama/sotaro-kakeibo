@@ -744,9 +744,13 @@ export default function Home() {
       if (txns.length === 0) txns = parseCSV(text, D.rules); // 念のためCSV方式でも再解析
       if (txns.length === 0) {
         if (isPdf) {
-          const chars = text.replace(/\s/g, "").length;
+          const body = text.replace(/\s/g, "");
+          const chars = body.length;
           const lines = text.split("\n").filter(l => l.trim()).length;
+          // 文字化け検知: 壊れたToUnicodeのPDFはラテン拡張・私用領域・豆腐(□)が大量に混ざる
+          const garbled = (body.match(/[\u00C0-\u02FF\uE000-\uF8FF\uFFFD\u25A1]/g) || []).length;
           if (chars < 30) sUpR("❌ このPDFには文字情報がほぼ含まれていません（画像スキャン型のPDF）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックス等の主要カードのCSVに対応しています）。");
+          else if (garbled / chars > 0.12) sUpR("❌ このPDFは特殊なフォントで作られており、文字情報が壊れた状態で記録されています（アメックスの明細書PDF等で確認されている仕様で、どのアプリでも読み取れません）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックスのCSVは対応済みです）。");
           else { sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。`); sUpDbg(text.split("\n").filter(l=>l.trim()).slice(0,18).join("\n")); }
         } else sUpR("❌ 取引データを抽出できませんでした。");
       } else sUpPrev(txns);
