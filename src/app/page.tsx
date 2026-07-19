@@ -244,6 +244,7 @@ async function extractPdfText(file: File): Promise<string> {
 // ═══ カード明細PDFの行を解析 ═══
 // ①楽天型「日付 店名 利用者 支払方法 利用金額 …」の表形式 → ②汎用「日付 店名 … 金額」の順で試す
 function parsePdfStatement(text: string, rules?: Record<string, string>): any[] {
+  text = text.normalize("NFKC"); // 全角数字・全角記号の明細（６月１３日/１，２３４）を半角化してから解析
   const txns: any[] = [];
   const dateRe = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/;
   for (const raw of text.split("\n")) {
@@ -735,7 +736,7 @@ export default function Home() {
 
   // ① 解析してプレビューに出す（この時点ではまだ追加しない）
   const handleUpload = async (file: File) => {
-    sUpL(true); sUpR(""); sUpPrev(null);
+    sUpL(true); sUpR(""); sUpPrev(null); sUpDbg("");
     try {
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
       const text = isPdf ? await extractPdfText(file) : await readTextAuto(file);
@@ -746,7 +747,7 @@ export default function Home() {
           const chars = text.replace(/\s/g, "").length;
           const lines = text.split("\n").filter(l => l.trim()).length;
           if (chars < 30) sUpR("❌ このPDFには文字情報がほぼ含まれていません（画像スキャン型のPDF）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックス等の主要カードのCSVに対応しています）。");
-          else sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。この様式のスクリーンショット（金額は隠してOK）を開発側に送っていただければ対応します。`);
+          else { sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。`); sUpDbg(text.split("\n").filter(l=>l.trim()).slice(0,18).join("\n")); }
         } else sUpR("❌ 取引データを抽出できませんでした。");
       } else sUpPrev(txns);
     } catch(e:any) {
@@ -1080,6 +1081,7 @@ export default function Home() {
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
+  const [upDbg,sUpDbg]=useState(""); // PDF様式不一致時の読み取り内容プレビュー（様式報告用）
   // ═══ 目標別つみたて（袋分け貯金）═══
   const [shFund,sShFund]=useState(false);
   const [eFdId,sEFdId]=useState<any>(null);
@@ -1968,6 +1970,11 @@ export default function Home() {
           </div>);
         })()}
         {upR&&<div style={{padding:10,borderRadius:8,background:/^[✅ℹ]/.test(upR)?"rgba(46,204,113,0.1)":"rgba(255,80,80,0.1)",color:upR.startsWith("✅")?"#2ECC71":upR.startsWith("ℹ️")?"#3498DB":"#FF6B6B",fontSize:14,marginTop:upPrev?10:0}}>{upR}</div>}
+        {upDbg&&<div style={{marginTop:8,padding:"10px 12px",borderRadius:10,background:"rgba(var(--wrgb),0.04)",border:"1px dashed var(--bd)"}}>
+          <div style={{fontSize:12,color:"var(--t6)",fontWeight:700,marginBottom:4}}>🔍 読み取れた内容の先頭（様式対応の手がかりになります）</div>
+          <div style={{fontSize:10,color:"var(--t8)",fontFamily:"monospace",whiteSpace:"pre-wrap",wordBreak:"break-all",maxHeight:180,overflow:"auto",lineHeight:1.6}}>{upDbg}</div>
+          <div style={{fontSize:11,color:"var(--t9)",marginTop:6}}>この部分のスクリーンショット（金額が写っていても隠してOK）を開発側に送っていただければ、この様式に対応します。</div>
+        </div>}
       </BS>
 
       {/* ── 目標別つみたての追加/編集 ── */}
