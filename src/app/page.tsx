@@ -1334,9 +1334,17 @@ export default function Home() {
             <h3 style={{fontSize:15,fontWeight:700,margin:"0 0 2px",color:"#FF8E53"}}>損益計算書 <span style={{fontSize:11,color:"var(--t8)",fontWeight:400}}>P/L · {cm}</span></h3>
             <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 10px"}}>その月にいくら稼ぎ、いくら使ったか</p>
             <SR l="収益（収入）" v={tI} c="#2ECC71"/>
+            {(()=>{const g:Record<string,number>={};(md.incomes||[]).forEach((i:any)=>{g[i.type]=(g[i.type]||0)+i.amount;});
+              return IT.filter(t=>g[t.id]).map(t=><SR key={t.id} l={"　└ "+t.i+" "+t.l} v={g[t.id]} c="var(--t4)" sub sm/>);})()}
             <SR l="費用（支出）" v={tE} c="#FF6B6B"/>
-            <SR l="　└ 固定費" v={fxT} c="#3498DB" sub/>
-            <SR l="　└ 変動費" v={tE-fxT} c="#F39C12" sub/>
+            {srt.map(([c,v]:any)=>{const cfg=EC[c]||{i:"📦",c:"var(--t7)"};return(
+              <div key={c} onClick={()=>{sFCat(c);sPg("list");}} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"2px 0",cursor:"pointer"}}>
+                <span style={{fontSize:12,color:"var(--t6)"}}>　└ {cfg.i} {c} <span style={{fontSize:10,color:"var(--t9)"}}>{tE>0?Math.round(v.total/tE*100):0}%・{v.count}件 ›</span></span>
+                <span style={{fontSize:12,fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{v.total.toLocaleString()}</span>
+              </div>);})}
+            <div style={{borderTop:"1px dashed rgba(var(--wrgb),0.08)",margin:"6px 0 4px"}}/>
+            <SR l="　└ 固定費 小計" v={fxT} c="#3498DB" sub/>
+            <SR l="　└ 変動費 小計" v={tE-fxT} c="#F39C12" sub/>
             {bC["投資・貯蓄"]&&<SR l="　└ うち投資・貯蓄" v={bC["投資・貯蓄"].total} c="#27AE60" sub/>}
             <div style={{borderTop:"1px solid rgba(var(--wrgb),0.12)",margin:"8px 0 6px"}}/>
             <SR l="当期純利益（収支）" v={bal} c={bal>=0?"#2ECC71":"#E74C3C"} bold signed/>
@@ -1374,35 +1382,6 @@ export default function Home() {
               </div>}
             </div>
           </div>
-
-          {/* ── 前月比（どこが増えた/減ったか）── */}
-          {prev.tE>0&&catDelta.length>0&&<div style={cs()}>
-            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"var(--t4)"}}>📊 前月比 <span style={{fontSize:11,color:"var(--t8)",fontWeight:400}}>{prevKey} → {cm}</span></h3>
-            <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>支出合計 {tE<=prev.tE?"−":"＋"}¥{Math.abs(tE-prev.tE).toLocaleString()}（¥{prev.tE.toLocaleString()} → ¥{tE.toLocaleString()}）</p>
-            {catDelta.slice(0,6).map(([c,d])=>{const cfg=EC[c]||{i:"📦",c:"var(--t7)"};const w=Math.min(100,Math.abs(d)/Math.max(...catDelta.map(([,x])=>Math.abs(x)))*100);
-              return(<div key={c} onClick={()=>{sFCat(c);sPg("list");}} style={{marginBottom:6,cursor:"pointer"}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
-                  <span style={{color:"var(--t3)"}}>{cfg.i} {c} <span style={{color:"var(--t10)",fontSize:10}}>›</span></span>
-                  <span style={{fontFamily:"monospace",fontWeight:600,color:d>0?"#FF6B6B":"#2ECC71"}}>{d>0?"＋":"−"}¥{Math.abs(d).toLocaleString()}</span>
-                </div>
-                <div style={{height:3,background:"rgba(var(--wrgb),0.05)",borderRadius:2}}><div style={{height:"100%",width:w+"%",background:d>0?"#FF6B6B":"#2ECC71",borderRadius:2}}/></div>
-              </div>);})}
-          </div>}
-
-          {/* ── 固定費・サブスク一覧 ── */}
-          {fixedList.length>0&&<div style={cs()}>
-            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#4ECDC4"}}>🔁 固定費・サブスク一覧</h3>
-            <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>毎月かかっているもの。年換算で見ると見直しの効果がわかります</p>
-            {fixedList.map((f)=>{const cfg=EC[f.cat]||{i:"📦",c:"var(--t7)"};return(
-              <div key={f.desc} onClick={()=>{sQ(f.desc);sFCat("");sPg("list");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(var(--wrgb),0.03)",fontSize:13,cursor:"pointer"}}>
-                <span style={{color:"var(--t3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{cfg.i} {f.desc}{f.count>1&&<span style={{color:"var(--t9)",fontSize:11}}> ×{f.count}</span>}</span>
-                <span style={{flexShrink:0}}><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{f.total.toLocaleString()}</span><span style={{fontSize:10,color:"var(--t8)"}}> /月（年¥{(f.total*12).toLocaleString()}）</span></span>
-              </div>);})}
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:8,paddingTop:6,borderTop:"1px solid rgba(78,205,196,0.2)",fontSize:13}}>
-              <span style={{color:"#4ECDC4",fontWeight:700}}>月合計 ¥{fixedSum.toLocaleString()}</span>
-              <span style={{color:"#FFB347",fontWeight:700,fontFamily:"monospace"}}>年換算 ¥{(fixedSum*12).toLocaleString()}</span>
-            </div>
-          </div>}
 
           {/* ── 節約のヒント（固定費からの自動提案・アフィリエイト枠つき）── */}
           {saveHints.length>0&&<div style={cs({borderColor:"rgba(255,179,71,0.2)"})}>
@@ -1692,6 +1671,33 @@ export default function Home() {
               </button>);})}
           </div>}
           {tE>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"var(--t4)"}}>カテゴリ別支出（{cm}）</h3><ResponsiveContainer width="100%" height={Math.max(200,srt.length*30)}><BarChart data={srt.map(([c,v]:any)=>({name:(EC[c]?.i||"")+c.replace(/（/,"(").replace(/）/,")"),full:c,value:v.total,color:EC[c]?.c||"var(--t7)"}))} layout="vertical" margin={{left:118,right:48,top:4,bottom:4}}><XAxis type="number" hide/><YAxis type="category" dataKey="name" width={118} tick={{fill:"var(--t5)",fontSize:11.5}} axisLine={false} tickLine={false} interval={0}/><Tooltip content={<TT/>}/><Bar dataKey="value" radius={[0,4,4,0]} label={{position:"right",fill:"var(--t7)",fontSize:10,formatter:(v:number)=>"¥"+v.toLocaleString()}} onClick={(d:any)=>d?.full&&sFCat(fCat===d.full?"":d.full)}>{srt.map(([c]:any,i:number)=><Cell key={i} fill={EC[c]?.c||"var(--t7)"} cursor="pointer"/>)}</Bar></BarChart></ResponsiveContainer><p style={{fontSize:11,color:"var(--t9)",margin:"2px 0 0",textAlign:"center"}}>バーをタップでそのカテゴリの明細に絞り込み</p></div>}
+          {/* ── 前月比（どこが増えた/減ったか）── */}
+          {prev.tE>0&&catDelta.length>0&&<div style={cs()}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"var(--t4)"}}>📊 前月比 <span style={{fontSize:11,color:"var(--t8)",fontWeight:400}}>{prevKey} → {cm}</span></h3>
+            <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>支出合計 {tE<=prev.tE?"−":"＋"}¥{Math.abs(tE-prev.tE).toLocaleString()}（¥{prev.tE.toLocaleString()} → ¥{tE.toLocaleString()}）</p>
+            {catDelta.slice(0,6).map(([c,d])=>{const cfg=EC[c]||{i:"📦",c:"var(--t7)"};const w=Math.min(100,Math.abs(d)/Math.max(...catDelta.map(([,x])=>Math.abs(x)))*100);
+              return(<div key={c} onClick={()=>{sFCat(c);sPg("list");}} style={{marginBottom:6,cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:2}}>
+                  <span style={{color:"var(--t3)"}}>{cfg.i} {c} <span style={{color:"var(--t10)",fontSize:10}}>›</span></span>
+                  <span style={{fontFamily:"monospace",fontWeight:600,color:d>0?"#FF6B6B":"#2ECC71"}}>{d>0?"＋":"−"}¥{Math.abs(d).toLocaleString()}</span>
+                </div>
+                <div style={{height:3,background:"rgba(var(--wrgb),0.05)",borderRadius:2}}><div style={{height:"100%",width:w+"%",background:d>0?"#FF6B6B":"#2ECC71",borderRadius:2}}/></div>
+              </div>);})}
+          </div>}
+          {/* ── 固定費・サブスク一覧 ── */}
+          {fixedList.length>0&&<div style={cs()}>
+            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"#4ECDC4"}}>🔁 固定費・サブスク一覧</h3>
+            <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>毎月かかっているもの。年換算で見ると見直しの効果がわかります</p>
+            {fixedList.map((f)=>{const cfg=EC[f.cat]||{i:"📦",c:"var(--t7)"};return(
+              <div key={f.desc} onClick={()=>{sQ(f.desc);sFCat("");sPg("list");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(var(--wrgb),0.03)",fontSize:13,cursor:"pointer"}}>
+                <span style={{color:"var(--t3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginRight:8}}>{cfg.i} {f.desc}{f.count>1&&<span style={{color:"var(--t9)",fontSize:11}}> ×{f.count}</span>}</span>
+                <span style={{flexShrink:0}}><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{f.total.toLocaleString()}</span><span style={{fontSize:10,color:"var(--t8)"}}> /月（年¥{(f.total*12).toLocaleString()}）</span></span>
+              </div>);})}
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:8,paddingTop:6,borderTop:"1px solid rgba(78,205,196,0.2)",fontSize:13}}>
+              <span style={{color:"#4ECDC4",fontWeight:700}}>月合計 ¥{fixedSum.toLocaleString()}</span>
+              <span style={{color:"#FFB347",fontWeight:700,fontFamily:"monospace"}}>年換算 ¥{(fixedSum*12).toLocaleString()}</span>
+            </div>
+          </div>}
           {/* 収入セクション */}
           <div style={cs({padding:"10px 14px"})}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
