@@ -293,7 +293,7 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
 }
 
 // ═══ 初期状態（デモデータなし・まっさらな状態から開始）═══
-const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], funds:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
+const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as any[], assetHist:[] as any[], funds:[] as any[], recurring:[] as any[], goal:{target:0,label:""}, rules:{} as Record<string,string>, budget:{total:0,cat:{} as Record<string,number>}, cats:{} as Record<string,{i:string;c:string;t:string}> };
 // ローカル時刻基準の年月・年月日（UTC基準だと日本の月初0時〜9時に月がズレる）
 const localYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const localYMD = (d = new Date()) => `${localYM(d)}-${String(d.getDate()).padStart(2,"0")}`;
@@ -569,7 +569,7 @@ export default function Home() {
     try{await navigator.clipboard.writeText(text+" "+url);showToast("📋 紹介文をコピーしました。SNSやLINEに貼り付けて共有できます");}catch{showToast("⚠️ コピーできませんでした");}
   };
 
-  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
+  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],recurring:s.recurring||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy&&!SV(D)) showToast("⚠️ 保存できませんでした。端末の空き容量やプライベートモードをご確認ください");},[D,rdy,showToast]);
   // オフライン対応: Service Worker登録（一度開けば圏外でも起動できる）
   useEffect(()=>{if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});},[]);
@@ -623,6 +623,41 @@ export default function Home() {
   const nwP=nwTgt>0?Math.min(100,Math.max(0,netW/nwTgt*100)):0;
   // ── 前月データ（前月比の可視化とコメントに使用）──
   const prevKey=useMemo(()=>{if(!cm)return "";const [y,m]=cm.split("-").map(Number);return m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;},[cm]);
+  // 毎月の自動計上: 実際の今月に、未計上の固定費ルールを差し込む（rid で二重登録を防止）
+  useEffect(()=>{
+    if(!rdy) return;
+    const nowK=localYM(); const [y,mo]=nowK.split("-").map(Number); const dim=new Date(y,mo,0).getDate();
+    sD((p:any)=>{
+      const rec=p.recurring||[]; if(!rec.length) return p;
+      const m=p.months[nowK]||{incomes:[],manualExp:[],cardExp:[]};
+      const have=new Set((m.manualExp||[]).filter((t:any)=>t.rid!=null).map((t:any)=>t.rid));
+      const add=rec.filter((r:any)=>!have.has(r.id)).map((r:any)=>({rid:r.id,date:`${nowK.slice(5)}/${String(Math.min(r.day||1,dim)).padStart(2,"0")}`,description:r.label,amount:r.amount,category:r.category,source:"manual",id:Date.now()+Math.random()*1e4}));
+      if(!add.length) return p;
+      return {...p,months:{...p.months,[nowK]:{...m,incomes:m.incomes||[],cardExp:m.cardExp||[],manualExp:[...(m.manualExp||[]),...add]}}};
+    });
+  },[rdy,D.recurring]);
+  // 月初の「先月まとめ」自動表示: 実際の月が変わって初回起動時、前月にデータがあれば出す
+  const [shRecap,sShRecap]=useState(false); const [recapKey,sRecapKey]=useState("");
+  useEffect(()=>{
+    if(!rdy) return;
+    try{
+      const nowK=localYM(); const seen=localStorage.getItem("kakeibo-lastseen");
+      localStorage.setItem("kakeibo-lastseen",nowK);
+      if(seen&&seen!==nowK){
+        const [y,m]=nowK.split("-").map(Number); const pk=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
+        const pm=D.months[pk];
+        if(pm&&((pm.manualExp||[]).length+(pm.cardExp||[]).length+(pm.incomes||[]).length)>0){ sRecapKey(pk); sShRecap(true); }
+      }
+    }catch{}
+  },[rdy]);
+  const recapD=useMemo(()=>{
+    const pm=D.months[recapKey]; if(!pm) return null;
+    const inc=(pm.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);
+    const es=[...(pm.manualExp||[]),...(pm.cardExp||[])]; const exp=es.reduce((s:number,x:any)=>s+x.amount,0);
+    const cat:Record<string,number>={}; es.forEach((t:any)=>{cat[t.category]=(cat[t.category]||0)+t.amount;});
+    const top=Object.entries(cat).sort((a:any,b:any)=>b[1]-a[1]).slice(0,3);
+    return {inc,exp,bal:inc-exp,sr:inc>0?Math.max(0,Math.round((inc-exp)/inc*100)):null,top};
+  },[recapKey,D.months]);
   const prev=useMemo(()=>{
     const pm=D.months[prevKey];if(!pm)return{tE:0,tI:0,bC:{} as any};
     const all=[...(pm.cardExp||[]),...(pm.manualExp||[])];
@@ -1083,6 +1118,19 @@ export default function Home() {
   const [selDay,sSelDay]=useState<number|null>(null);
   const [aPer,sAPer]=useState("6m"); // 資産推移グラフの表示期間
   const [histView,sHistView]=useState<"month"|"year">("month"); // 資産推移テーブル: 月ごと/年ごと
+  const [trendCat,sTrendCat]=useState(""); // カテゴリ別月推移グラフの対象カテゴリ
+  // ═══ 毎月の自動計上（固定費）═══
+  const [shRec,sShRec]=useState(false); const [shRecMenu,sShRecMenu]=useState(false);
+  const [eRecId,sERecId]=useState<any>(null);
+  const [rL,srL]=useState(""); const [rA,srA]=useState(""); const [rC,srC]=useState("家賃・住居"); const [rDay,srDay]=useState("1");
+  const openRec=(r?:any)=>{ if(r){sERecId(r.id);srL(r.label);srA(String(r.amount));srC(r.category);srDay(String(r.day||1));} else {sERecId(null);srL("");srA("");srC("家賃・住居");srDay("1");} sShRec(true); };
+  const saveRec=()=>{
+    if(!rL.trim()||!rA||Number(rA)<=0){showToast("⚠️ 名前と金額を入力してください");return;}
+    const base={label:rL.trim(),amount:Number(rA),category:rC,day:Math.min(31,Math.max(1,Number(rDay)||1)),i:EC[rC]?.i||"🔁"};
+    sD((p:any)=>({...p,recurring:eRecId!=null?(p.recurring||[]).map((x:any)=>x.id===eRecId?{...x,...base}:x):[...(p.recurring||[]),{...base,id:Date.now()}]}));
+    vib(10);showToast(eRecId!=null?"✏️ 自動計上を更新しました":"✅ 毎月の自動計上に追加しました");sShRec(false);
+  };
+  const delRec=(id:any)=>{if(!confirm("この自動計上を削除しますか？（登録済みの過去の支出は残ります）"))return;sD((p:any)=>({...p,recurring:(p.recurring||[]).filter((x:any)=>x.id!==id)}));sShRec(false);showToast("🗑 削除しました");};
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
@@ -1277,6 +1325,18 @@ export default function Home() {
             <button onClick={()=>sShE(true)} style={{background:"rgba(255,107,107,0.03)",border:"1px dashed rgba(255,107,107,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💸</div><div style={{fontSize:12,color:"#FF6B6B",fontWeight:600}}>支出</div></button>
             <button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.03)",border:"1px dashed rgba(52,152,219,0.3)",borderRadius:12,padding:10,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:18}}>💳</div><div style={{fontSize:12,color:"#3498DB",fontWeight:600}}>明細取込</div></button>
           </div>
+          {/* 予算オーバー/到達間近の警告 */}
+          {bud&&(()=>{
+            const over:string[]=[],near:string[]=[];
+            Object.entries(bud.catB).forEach(([c,b]:any)=>{const sp=bC[c]?.total||0;if(sp>b)over.push(c);else if(b>0&&sp>=b*0.9)near.push(c);});
+            const totalOver=bud.total>0&&tE>bud.total;
+            if(!over.length&&!near.length&&!totalOver) return null;
+            return(<div style={cs({background:over.length||totalOver?"rgba(231,76,60,0.08)":"rgba(243,156,18,0.08)",borderColor:over.length||totalOver?"rgba(231,76,60,0.3)":"rgba(243,156,18,0.3)",padding:"11px 14px"})}>
+              <div style={{fontSize:13,fontWeight:700,color:over.length||totalOver?"#E74C3C":"#F39C12",marginBottom:over.length||near.length?4:0}}>{over.length||totalOver?"⚠️ 予算オーバー":"🟡 予算に近づいています"}</div>
+              {totalOver&&<div style={{fontSize:12,color:"var(--t3)",lineHeight:1.6}}>今月の支出が予算を <b style={{color:"#E74C3C"}}>¥{(tE-bud.total).toLocaleString()}</b> 超えています。</div>}
+              {over.length>0&&<div style={{fontSize:12,color:"var(--t3)",lineHeight:1.6}}>超過中: {over.map(c=>(EC[c]?.i||"")+c).join("、")}</div>}
+              {near.length>0&&<div style={{fontSize:12,color:"var(--t6)",lineHeight:1.6}}>もうすぐ上限: {near.map(c=>(EC[c]?.i||"")+c).join("、")}</div>}
+            </div>);})()}
           {bud?(<div style={cs()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#4ECDC4"}}>📏 今月の予算</h3>
@@ -1440,6 +1500,36 @@ export default function Home() {
         {pg==="compare"&&(<div>
           <h2 style={{fontSize:16,fontWeight:700,margin:"0 0 10px",color:"var(--t1)"}}>🆚 月比較</h2>
           {monthKeys.length<2&&<p style={{fontSize:13,color:"var(--t7)"}}>比較できる月がまだ1つしかありません。明細がたまると2ヶ月を見比べられます。</p>}
+          {/* ── カテゴリ別 月推移グラフ ── */}
+          {monthKeys.length>=2&&(()=>{
+            // 記録のある直近12ヶ月×全カテゴリの月別合計を集計
+            const months=monthKeys.slice(-12);
+            const catSet=new Set<string>(); const perM:Record<string,Record<string,number>>={};
+            for(const k of months){const m=D.months[k];perM[k]={};[...(m.manualExp||[]),...(m.cardExp||[])].forEach((t:any)=>{perM[k][t.category]=(perM[k][t.category]||0)+t.amount;catSet.add(t.category);});}
+            const cats=Array.from(catSet); if(!cats.length) return null;
+            const sel=cats.includes(trendCat)?trendCat:cats.map(c=>[c,months.reduce((s,k)=>s+(perM[k][c]||0),0)] as [string,number]).sort((a,b)=>b[1]-a[1])[0][0];
+            const data=months.map(k=>({name:`${parseInt(k.slice(5),10)}月`,額:perM[k][sel]||0}));
+            const vals=data.map(d=>d.額); const avg=Math.round(vals.reduce((a,b)=>a+b,0)/(vals.length||1));
+            const last=vals[vals.length-1],prevV=vals.length>=2?vals[vals.length-2]:null; const cfg=EC[sel]||{i:"📦",c:"#888"};
+            return(<div style={cs()}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"var(--t4)"}}>📈 カテゴリ別の月推移</h3>
+              <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:6,WebkitOverflowScrolling:"touch"}}>
+                {cats.map(c=>{const on=c===sel;const cc=EC[c]||{i:"📦",c:"#888"};return(
+                  <button key={c} onClick={()=>sTrendCat(c)} style={{flexShrink:0,padding:"7px 12px",borderRadius:999,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontWeight:on?700:400,background:on?cc.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(on?cc.c+"aa":"rgba(var(--wrgb),0.08)"),color:on?cc.c:"var(--t6)"}}>{cc.i} {c}</button>);})}
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={data} margin={{top:8,right:8,left:-8,bottom:0}}>
+                  <XAxis dataKey="name" tick={{fill:"var(--t7)",fontSize:11}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:"var(--t8)",fontSize:10}} axisLine={false} tickLine={false} width={46} tickFormatter={(v:number)=>v>=1e4?Math.round(v/1e4)+"万":String(v)}/>
+                  <Tooltip content={<TT/>}/>
+                  <Bar dataKey="額" fill={cfg.c} radius={[4,4,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"var(--t7)",marginTop:4}}>
+                <span>月平均 <b style={{color:"var(--t3)",fontFamily:"monospace"}}>¥{avg.toLocaleString()}</b></span>
+                {prevV!=null&&<span>前月比 <b style={{color:last<=prevV?"#2ECC71":"#E74C3C",fontFamily:"monospace"}}>{last<=prevV?"−":"＋"}¥{Math.abs(last-prevV).toLocaleString()}</b></span>}
+              </div>
+            </div>);})()}
           {/* ── 月の比較（任意の2ヶ月・カテゴリ別）── */}
           {cmpData&&<div style={cs()}>
             <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 2px",color:"var(--t4)"}}>🆚 月の比較（カテゴリ別）</h3>
@@ -1817,6 +1907,19 @@ export default function Home() {
             {shIn&&<div style={{marginTop:10,fontSize:13,color:"var(--t4)",lineHeight:1.8}}><p style={{margin:"0 0 4px"}}><strong>iPhone:</strong> Safari → 共有（□↑）→ ホーム画面に追加</p><p style={{margin:0}}><strong>Android:</strong> Chrome → ⋮ → ホーム画面に追加</p></div>}
           </div>
           <div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 6px",color:"var(--t3)"}}>📅 月の管理</h3><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{Object.keys(D.months).sort().map(k=><button key={k} onClick={()=>sD((p:any)=>({...p,cur:k}))} style={{padding:"5px 10px",borderRadius:6,fontSize:12,cursor:"pointer",background:k===cm?"rgba(255,107,107,0.15)":"rgba(var(--wrgb),0.04)",border:"1px solid "+(k===cm?"rgba(255,107,107,0.3)":"var(--bd)"),color:k===cm?"#FF6B6B":"var(--t5)"}}>{k}</button>)}<button onClick={()=>sShM(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:12,cursor:"pointer",background:"rgba(var(--wrgb),0.04)",border:"1px dashed var(--t10)",color:"var(--t7)"}}>+ 新規</button></div></div>
+          <div style={cs()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"#4ECDC4"}}>🔁 毎月の自動計上</h3>
+              <button onClick={()=>openRec()} style={{background:"rgba(78,205,196,0.1)",border:"1px solid rgba(78,205,196,0.2)",color:"#4ECDC4",padding:"3px 10px",borderRadius:5,fontSize:12,cursor:"pointer",fontWeight:600}}>＋新規</button>
+            </div>
+            <p style={{fontSize:12,color:"var(--t7)",margin:"0 0 8px"}}>家賃・サブスクなど毎月同じ支出を登録すると、毎月その日に自動で計上されます（現金払いの固定費に便利）。</p>
+            {(D.recurring||[]).length===0
+              ?<p style={{fontSize:12,color:"var(--t9)",margin:0}}>まだありません。「＋新規」から登録できます。</p>
+              :(D.recurring||[]).map((r:any)=>(<div key={r.id} onClick={()=>openRec(r)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(var(--wrgb),0.05)",cursor:"pointer",fontSize:13}}>
+                <span style={{color:"var(--t3)"}}>{r.i} {r.label} <span style={{color:"var(--t9)",fontSize:11}}>毎月{r.day}日・{r.category} ✎</span></span>
+                <span style={{fontFamily:"monospace",color:"#4ECDC4",fontWeight:600}}>¥{r.amount.toLocaleString()}</span>
+              </div>))}
+          </div>
           <div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 6px",color:"var(--t3)"}}>💳 明細アップロード</h3><p style={{fontSize:13,color:"var(--t6)",margin:"0 0 8px"}}>カード会社の明細（CSV / PDF）をアップロードして取引を追加できます。重複は自動でスキップされ、何度でも蓄積できます。</p><button onClick={()=>sShUp(true)} style={{background:"rgba(52,152,219,0.1)",border:"1px solid rgba(52,152,219,0.2)",color:"#3498DB",padding:"8px 0",borderRadius:8,fontSize:14,cursor:"pointer",width:"100%",fontWeight:600}}>📄 明細をアップロード</button></div>
           <div style={cs()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2030,6 +2133,39 @@ export default function Home() {
       </BS>
 
       {/* ── 目標別つみたての追加/編集 ── */}
+      {/* ── 毎月の自動計上の追加/編集 ── */}
+      <BS open={shRec} onClose={()=>sShRec(false)} title={eRecId!=null?"🔁 自動計上を編集":"🔁 毎月の自動計上を追加"}>
+        <p style={{fontSize:12,color:"var(--t7)",margin:"0 0 12px"}}>毎月きまって出ていく支出を登録しておくと、今月ぶんが自動で計上されます。金額が変わったら編集すればOK。</p>
+        <FI label="名前" type="text" value={rL} onChange={srL} placeholder="例: 家賃、Netflix、駐車場代"/>
+        <FI label="金額（毎月）" type="amount" value={rA} onChange={srA} placeholder="78000"/>
+        <FI label="カテゴリ" type="select" value={rC} onChange={srC}>{Object.entries(EC).map(([c,v])=><option key={c} value={c}>{v.i} {c}</option>)}</FI>
+        <FI label="毎月の計上日（1〜31）" type="amount" value={rDay} onChange={srDay} placeholder="1"/>
+        <button onClick={saveRec} style={B1}>{eRecId!=null?"保存":"✅ 登録する"}</button>
+        {eRecId!=null&&<button onClick={()=>delRec(eRecId)} style={{width:"100%",background:"none",border:"1px solid rgba(231,76,60,0.3)",color:"#E74C3C",padding:"11px 0",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:8}}>🗑 この自動計上を削除</button>}
+      </BS>
+      {/* ── 月初の「先月まとめ」── */}
+      <BS open={shRecap} onClose={()=>sShRecap(false)} title={`📊 ${recapKey.replace("-","年")}月のまとめ`}>
+        {recapD&&<div>
+          <p style={{fontSize:12,color:"var(--t7)",margin:"0 0 12px"}}>新しい月になりました。先月をふり返ってみましょう。</p>
+          <div style={cs({padding:"14px 16px"})}>
+            <SR l="収入" v={recapD.inc} c="#2ECC71"/>
+            <SR l="支出" v={recapD.exp} c="#FF6B6B"/>
+            <div style={{borderTop:"1px solid rgba(var(--wrgb),0.1)",margin:"6px 0"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+              <span style={{fontSize:14,fontWeight:700,color:"var(--t1)"}}>収支</span>
+              <span style={{fontSize:22,fontWeight:800,fontFamily:"monospace",color:recapD.bal>=0?"#2ECC71":"#E74C3C"}}>{recapD.bal>=0?"+":"−"}¥{Math.abs(recapD.bal).toLocaleString()}</span>
+            </div>
+            {recapD.sr!=null&&<div style={{fontSize:13,color:"var(--t7)",marginTop:2}}>貯蓄率 <b style={{color:recapD.sr>=20?"#2ECC71":"#FFB347"}}>{recapD.sr}%</b></div>}
+          </div>
+          {recapD.top.length>0&&<div style={cs({padding:"14px 16px"})}>
+            <h4 style={{fontSize:13,fontWeight:700,margin:"0 0 8px",color:"var(--t4)"}}>支出トップ3</h4>
+            {recapD.top.map(([c,v]:any)=>{const cfg=EC[c]||{i:"📦",c:"var(--t7)"};return(
+              <div key={c} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}><span style={{color:"var(--t3)"}}>{cfg.i} {c}</span><span style={{fontFamily:"monospace",color:cfg.c,fontWeight:600}}>¥{v.toLocaleString()}</span></div>);})}
+          </div>}
+          <button onClick={()=>sShRecap(false)} style={B1}>今月もがんばる 💪</button>
+        </div>}
+      </BS>
+
       <BS open={shFund} onClose={()=>sShFund(false)} title={eFdId!=null?"🪣 目標を編集":"🪣 目標を追加"}>
         <div style={{marginBottom:12}}>
           <label style={{fontSize:11,color:"var(--t7)",marginBottom:6,display:"block"}}>アイコン</label>
