@@ -496,20 +496,20 @@ const cs = (s:any={}) => ({background:"rgba(var(--wrgb),0.035)",borderRadius:16,
 const B1:React.CSSProperties = {background:"linear-gradient(135deg,#FF6B6B,#FF8E53)",border:"none",color:"#fff",padding:"14px 0",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",width:"100%",fontFamily:"inherit",minHeight:48};
 
 // ═══ マネタイズ設定（リンクはすべてここで差し替える）═══
-// support: 寄付ページ(Ko-fi/OFUSE等) / pro: 応援プラン購入ページ(Stripe Payment Link/BOOTH等)
-// 空文字のままだと該当ボタンは表示されない（リンク切れを出さないため）。設定手順は README「💰 マネタイズ運用ガイド」
+// アフィリエイトURL枠（A8.net等）。空文字のリンクは表示されない（リンク切れ防止）。
+// 提携が承認され次第、各URLを設定するだけで各ページに表示される。設定手順は README「💰 マネタイズ運用ガイド」
 const MONET = {
-  support: "",  // 例: "https://ko-fi.com/xxxx"
-  pro: "",      // 例: "https://buy.stripe.com/xxxx"（購入者にライセンスコードを送付する運用）
-  proPrice: "¥480（買い切り）",
-  aff: { sim: "", energy: "", insurance: "" },  // 節約ヒントのアフィリエイトURL枠（A8.net/もしも等）
+  aff: {
+    card: "",       // クレジットカード発行（明細ページ）
+    securities: "", // 証券口座/NISA（資産・目標ページ）
+    fp: "",         // 家計/FP無料相談（赤字時）
+    sim: "",        // 格安SIM（通信費）
+    energy: "",     // 電力・ガス比較（光熱費）
+    insurance: "",  // 保険見直し（保険）
+    hikari: "",     // 光回線（通信費が特に高い時）
+    furusato: "",   // ふるさと納税（年末）
+  },
 };
-// 応援プランのライセンスコード検証（端末内で完結・サーバー不要。コード生成はREADME参照）
-function checkProCode(raw: string): boolean {
-  const m = raw.trim().toUpperCase().replace(/\s/g, "").match(/^MK-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
-  if (!m) return false;
-  return (m[1] + m[2]).split("").reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7) === 777;
-}
 
 // ═══ MAIN ═══
 export default function Home() {
@@ -540,15 +540,10 @@ export default function Home() {
   const [fLT,sfLT]=useState("loan_home"); const [fLA,sfLA]=useState(""); const [fLN,sfLN]=useState("");
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
-  // ═══ 応援プラン(Pro)・節約ヒント ═══
-  const [pro,sPro]=useState(false); const [fPC,sfPC]=useState("");
+  // ═══ 節約ヒントの非表示管理 ═══
   const [hintsOff,sHintsOff]=useState<Record<string,1>>({});
-  useEffect(()=>{try{sPro(localStorage.getItem("kakeibo-pro")==="1");sHintsOff(JSON.parse(localStorage.getItem("kakeibo-hints-off")||"{}"));}catch{}},[]);
+  useEffect(()=>{try{sHintsOff(JSON.parse(localStorage.getItem("kakeibo-hints-off")||"{}"));}catch{}},[]);
   const dismissHint=useCallback((id:string)=>{sHintsOff(p=>{const n={...p,[id]:1 as 1};try{localStorage.setItem("kakeibo-hints-off",JSON.stringify(n));}catch{} return n;});},[]);
-  const applyProCode=()=>{
-    if(checkProCode(fPC)){try{localStorage.setItem("kakeibo-pro","1");}catch{} sPro(true);sfPC("");showToast("💎 応援プランが有効になりました。ありがとうございます！");}
-    else showToast("⚠️ コードが正しくありません（形式: MK-XXXX-XXXX）");
-  };
   // ホームの左右スワイプで月切り替え（横スクロール要素の上から始まったスワイプは無視）
   const swp=useRef<{x:number;y:number;ok:boolean}|null>(null);
   const swTS=(e:any)=>{
@@ -1254,13 +1249,45 @@ export default function Home() {
       {h.url&&<a href={h.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:6,fontSize:13,color:"#FFB347",fontWeight:700,textDecoration:"none"}}>{h.label} →<span style={{fontSize:9,color:"var(--t8)",marginLeft:5,border:"1px solid var(--bd2)",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
     </div>);
   };
+  // ═══ ページ別アフィリエイトオファー（すべて端末内の実データから算出。嘘の煽りはしない）═══
+  // 損失回避＝「本当に払い続ける/取りこぼす金額」を提示するのが最も効き、かつ信頼を壊さない
+  const offers=(()=>{
+    const o:Record<string,{i:string,tone:"loss"|"gain"|"anxiety",head:string,body:string,url:string,label:string}>={};
+    // 明細: カード払いが多い→高還元カードで取りこぼしているポイント（損失回避）
+    const cardSpend=(md.cardExp||[]).reduce((s:number,t:any)=>s+t.amount,0);
+    if(cardSpend>=30000){const yr=cardSpend*12;const pt=Math.round(yr*0.01);
+      o.list={i:"💳",tone:"loss",head:"ポイント、取りこぼしていませんか？",body:`今月のカード払いは¥${cardSpend.toLocaleString()}。年約¥${yr.toLocaleString()}になります。還元率1%のカードなら年¥${pt.toLocaleString()}ぶんのポイント。今の還元率が0.5%以下なら毎年その半分を捨てている計算です。`,url:MONET.aff.card,label:"年会費無料の高還元カードを見る"};}
+    // 資産/目標: 投資・貯蓄がある/目標がある→NISAの複利（機会損失）
+    const inv=bC["投資・貯蓄"]?.total||0;
+    if(inv>=10000||nwTgt>0){const m=inv>=10000?inv:30000;const y10=Math.round(m*12*((Math.pow(1.05,10)-1)/0.05/12*12)/1e4)*1e4;
+      o.assets={i:"📈",tone:"gain",head:"その貯蓄、増やせるかもしれません",body:`毎月¥${m.toLocaleString()}を年5%で運用できれば、10年で元本より約¥${(Math.round(m*12*10*0.28/1e4)*1e4).toLocaleString()}多くなる計算です（新NISAなら運用益が非課税）。始めるのが1年遅れるほど、複利のぶん将来の差は開きます。`,url:MONET.aff.securities,label:"NISA口座を無料でひらく"};}
+    // 目標(赤字時): 直近で赤字が続く→FP無料相談（不安・ただし事実ベース）
+    const ks=Object.keys(D.months).sort().slice(-3);
+    const defc=ks.filter(k=>{const mm=D.months[k];const i=(mm.incomes||[]).reduce((s:number,x:any)=>s+x.amount,0);const e=[...(mm.manualExp||[]),...(mm.cardExp||[])].reduce((s:number,x:any)=>s+x.amount,0);return e>i&&e>0;}).length;
+    if(defc>=2)o.goals={i:"👩‍💼",tone:"anxiety",head:"家計、プロに相談してみませんか",body:`直近で支出が収入を上回る月が${defc}ヶ月ありました。ひとりで抱えず、家計のプロ（FP）に無料で相談すると、固定費の下げどころが客観的に見つかることがあります。相談は無料・オンライン可。`,url:MONET.aff.fp,label:"無料でFPに相談する"};
+    return o;
+  })();
+  // オファー1件を描画（URL未設定なら提案文だけ・PR表記つき・×で消せる）
+  const Offer=({page}:{page:string})=>{
+    const off=(offers as any)[page]; if(!off||hintsOff["ad-"+page]) return null;
+    const tint=off.tone==="anxiety"?"rgba(231,76,60,":off.tone==="loss"?"rgba(255,179,71,":"rgba(52,152,219,";
+    const acol=off.tone==="anxiety"?"#E74C3C":off.tone==="loss"?"#FFB347":"#3498DB";
+    return(<div style={cs({borderColor:tint+"0.28)",background:tint+"0.05)"})}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+        <h3 style={{fontSize:13.5,fontWeight:700,margin:0,color:acol}}>{off.i} {off.head}</h3>
+        <button onClick={()=>dismissHint("ad-"+page)} aria-label="このお知らせを閉じる" style={{background:"none",border:"none",color:"var(--t9)",cursor:"pointer",padding:"2px 4px",fontSize:14,lineHeight:1,flexShrink:0}}>×</button>
+      </div>
+      <p style={{fontSize:12.5,color:"var(--t3)",margin:0,lineHeight:1.7}}>{off.body}</p>
+      {off.url&&<a href={off.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:8,padding:"9px 14px",borderRadius:10,background:acol,color:"#1a1a2e",fontSize:13,fontWeight:800,textDecoration:"none"}}>{off.label} →<span style={{fontSize:9,marginLeft:6,opacity:0.7,border:"1px solid rgba(26,26,46,0.4)",borderRadius:3,padding:"0 3px",verticalAlign:"middle"}}>PR</span></a>}
+    </div>);
+  };
 
   return (
     <div style={{minHeight:"100vh",background:"var(--bg)",color:"#e0e0e0",fontFamily:"'Hiragino Sans',-apple-system,sans-serif",paddingBottom:"calc(102px + env(safe-area-inset-bottom,0px))"}}>
       <div style={{maxWidth:480,margin:"0 auto",padding:"calc(14px + env(safe-area-inset-top,0px)) 14px 16px"}}>
         {/* 共通ヘッダー: タイトル＋ハンバーガーメニュー */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <h1 style={{fontSize:19,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書{pro&&<span title="応援プラン有効" style={{WebkitTextFillColor:"initial",fontSize:14,marginLeft:4}}>💎</span>}</h1>
+          <h1 style={{fontSize:19,fontWeight:700,margin:0,background:"linear-gradient(135deg,#FF6B6B,#FFB347)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>💰 マイ決算書</h1>
           <button aria-label="メニューを開く" onClick={()=>sShMenu(true)} style={{width:46,height:46,borderRadius:13,background:"rgba(var(--wrgb),0.06)",border:"1px solid rgba(var(--wrgb),0.1)",color:"var(--t2)",fontSize:21,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,flexShrink:0}}>☰</button>
         </div>
 
@@ -1643,7 +1670,9 @@ export default function Home() {
           {badges.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FFB347"}}>🏅 実績バッジ</h3><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{badges.map(b=><span key={b} style={{fontSize:12,fontWeight:700,color:"#FFB347",background:"rgba(255,179,71,0.08)",border:"1px solid rgba(255,179,71,0.25)",padding:"6px 12px",borderRadius:999}}>{b}</span>)}</div></div>}
           <button onClick={()=>sPg("assets")} style={{width:"100%",background:"rgba(155,89,182,0.08)",border:"1px solid rgba(155,89,182,0.25)",color:"#C39BD3",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:600,marginBottom:14}}>🔮 将来シミュレーションで到達時期を見る ›</button>
           <ACmt re={/目標|純資産|貯蓄|投資|黒字/}/>
-          <AdSlot idx={0}/>
+          <Offer page="goals"/>
+          <Offer page="assets"/>
+          {!offers.goals&&!offers.assets&&<AdSlot idx={0}/>}
         </div>)}
 
         {pg==="assets"&&(<div>
@@ -1784,6 +1813,7 @@ export default function Home() {
               {save<=0&&<p style={{fontSize:12,color:"#FFB347",margin:"8px 0 0"}}>⚠️ 直近の収支が赤字のため、このままだと純資産は増えません。まず月の予算設定から始めましょう。</p>}
               <p style={{fontSize:10,color:"var(--t9)",margin:"8px 0 0"}}>※ 将来の成果を保証するものではありません。利回りは複利・月次で概算しています。</p>
             </div>);})()}
+          <Offer page="assets"/>
           {D.assets.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#2ECC71"}}>資産の内訳</h3><ResponsiveContainer width="100%" height={170}><PieChart><Pie data={D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return{name:(at?.l||"他")+(a.note?`（${a.note}）`:""),value:a.amount,color:at?.c||"var(--t7)"};})} cx="50%" cy="50%" innerRadius={38} outerRadius={65} dataKey="value" paddingAngle={2} stroke="none">{D.assets.map((a:any,i:number)=><Cell key={i} fill={AT.find(t=>t.id===a.type)?.c||"var(--t7)"}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>{D.assets.map((a:any)=>{const at=AT.find(t=>t.id===a.type);return<div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:14,borderBottom:"1px solid rgba(var(--wrgb),0.03)"}}><span onClick={()=>openAs(a)} style={{color:"var(--t3)",cursor:"pointer",flex:1}}>{at?.i} {at?.l} {a.note&&<span style={{color:"var(--t9)",fontSize:12}}>({a.note})</span>} <span style={{color:"var(--t10)",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openAs(a)} style={{fontFamily:"monospace",color:at?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="資産を削除" onClick={()=>delAs(a.id)} style={{background:"none",border:"none",color:"var(--t9)",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
           {D.liabilities.length>0&&<div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 8px",color:"#FF6B6B"}}>負債の内訳</h3>{D.liabilities.map((a:any)=>{const lt=LT.find(t=>t.id===a.type);return<div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:14,borderBottom:"1px solid rgba(var(--wrgb),0.03)"}}><span onClick={()=>openLi(a)} style={{color:"var(--t3)",cursor:"pointer",flex:1}}>{lt?.i} {lt?.l} {a.note&&<span style={{color:"var(--t9)",fontSize:12}}>({a.note})</span>} <span style={{color:"var(--t10)",fontSize:11}}>✎</span></span><div style={{display:"flex",alignItems:"center",gap:8}}><span onClick={()=>openLi(a)} style={{fontFamily:"monospace",color:lt?.c,fontWeight:600,cursor:"pointer"}}>¥{a.amount.toLocaleString()}</span><button aria-label="負債を削除" onClick={()=>delLi(a.id)} style={{background:"none",border:"none",color:"var(--t9)",cursor:"pointer",padding:"10px 12px",margin:"-10px -8px",fontSize:15,lineHeight:1,flexShrink:0}}>×</button></div></div>;})}</div>}
         </div>)}
@@ -1795,6 +1825,7 @@ export default function Home() {
           </div>
           <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 8px"}}>内容タップで編集 ・ カテゴリタップで変更（同じ店は次回から自動仕分け）</p>
           <button onClick={()=>sShE(true)} style={{width:"100%",background:"rgba(255,107,107,0.08)",border:"1px dashed rgba(255,107,107,0.35)",color:"#FF6B6B",padding:"12px 0",borderRadius:12,fontSize:14,cursor:"pointer",fontWeight:700,marginBottom:10}}>🖩 電卓で手入力（支出・収入）</button>
+          <Offer page="list"/>
           {srt.length>0&&<div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:4,WebkitOverflowScrolling:"touch"}}>
             {srt.map(([cat,d]:any)=>{const cfg=EC[cat]||{i:"📦",c:"var(--t7)"};const on=fCat===cat;return(
               <button key={cat} onClick={()=>sFCat(on?"":cat)} style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"9px 13px",borderRadius:12,cursor:"pointer",background:on?cfg.c+"1e":"rgba(var(--wrgb),0.04)",border:"1.5px solid "+(on?cfg.c+"aa":"rgba(var(--wrgb),0.08)")}}>
@@ -1985,19 +2016,6 @@ export default function Home() {
           <div style={cs()}><h3 style={{fontSize:14,fontWeight:600,margin:"0 0 6px",color:"var(--t3)"}}>ℹ️ このアプリについて</h3>
             <p style={{fontSize:13,color:"var(--t6)",margin:0,lineHeight:1.8}}>💰 マイ決算書 — <b style={{color:"var(--t4)"}}>完全無料・広告なし・登録不要</b>。すべてのデータはこの端末のブラウザ内にのみ保存され、外部には一切送信されません。分析・コメントもすべて端末内で動きます。<br/>
             <span style={{color:"var(--t8)"}}>困ったとき：データが消えた→「バックアップの読み込み」で復元 ／ 仕分けが違う→明細でカテゴリをタップして修正（自動で学習）／ カテゴリを増やしたい→上の「カテゴリの管理」</span></p>
-          </div>
-          <div style={cs({borderColor:"rgba(255,179,71,0.25)",background:"linear-gradient(135deg,rgba(255,179,71,0.05),rgba(255,107,107,0.03))"})}>
-            <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 6px",color:"#FFB347"}}>{pro?"💎 応援プラン（有効）":"☕ このアプリを応援する"}</h3>
-            {pro?<p style={{fontSize:13,color:"var(--t4)",margin:0,lineHeight:1.7}}>応援ありがとうございます！ホームにサポーターバッジ💎が表示されています。今後の新機能（クラウド同期など）を優先してお届けします。</p>
-            :<>
-              <p style={{fontSize:13,color:"var(--t6)",margin:"0 0 10px",lineHeight:1.7}}>マイ決算書は<b style={{color:"var(--t3)"}}>広告なし・全機能無料</b>のまま開発を続けます。役に立ったら、応援プラン{MONET.proPrice}で開発を支えてもらえると嬉しいです（💎サポーターバッジ＋今後の新機能を優先提供）。</p>
-              {MONET.pro&&<button onClick={()=>window.open(MONET.pro,"_blank")} style={{background:"linear-gradient(135deg,#FFB347,#FF8E53)",border:"none",color:"#1a1a2e",padding:"10px 0",borderRadius:8,fontSize:14,cursor:"pointer",width:"100%",fontWeight:700,marginBottom:6}}>💎 応援プランを購入 {MONET.proPrice}</button>}
-              {MONET.support&&<button onClick={()=>window.open(MONET.support,"_blank")} style={{background:"rgba(255,179,71,0.12)",border:"1px solid rgba(255,179,71,0.3)",color:"#FFB347",padding:"9px 0",borderRadius:8,fontSize:14,cursor:"pointer",width:"100%",fontWeight:600,marginBottom:6}}>☕ 寄付で応援する</button>}
-              <div style={{display:"flex",gap:6,marginTop:2}}>
-                <input value={fPC} onChange={(e)=>sfPC(e.target.value)} placeholder="ライセンスコード（MK-XXXX-XXXX）" style={{flex:1,boxSizing:"border-box",padding:"8px 10px",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:8,color:"var(--t1)",fontSize:13,outline:"none",fontFamily:"monospace"}}/>
-                <button onClick={applyProCode} style={{background:"rgba(var(--wrgb),0.06)",border:"1px solid var(--bd2)",color:"var(--t3)",padding:"8px 14px",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600,flexShrink:0}}>適用</button>
-              </div>
-            </>}
           </div>
           <div style={cs()}>
             <h3 style={{fontSize:14,fontWeight:600,margin:"0 0 6px",color:"#4ECDC4"}}>📣 友だちに教える</h3>
