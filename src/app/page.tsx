@@ -1082,6 +1082,7 @@ export default function Home() {
   // 支出カレンダー（日別合計）
   const [selDay,sSelDay]=useState<number|null>(null);
   const [aPer,sAPer]=useState("6m"); // 資産推移グラフの表示期間
+  const [histView,sHistView]=useState<"month"|"year">("month"); // 資産推移テーブル: 月ごと/年ごと
   const [shAn,sShAn]=useState(false); // 年間決算書シート
   const [simR,sSimR]=useState("3");   // 将来シミュレーションの想定利回り(年%)
   const [shMenu,sShMenu]=useState(false); // ハンバーガーメニュー
@@ -1602,6 +1603,47 @@ export default function Home() {
                 <span><span style={{display:"inline-block",width:10,height:3,background:"#2ECC71",borderRadius:2,verticalAlign:"middle",marginRight:5}}/>総資産</span>
                 <span><span style={{display:"inline-block",width:10,height:3,background:"#3498DB",borderRadius:2,verticalAlign:"middle",marginRight:5}}/>純資産</span>
               </div>
+            </div>);})()}
+
+          {/* ── 資産推移（数値・月ごと/年ごと）── */}
+          {D.assetHist.length>0&&(()=>{
+            // 期間ごとに最後のスナップショットを採用（1期間に複数記録があっても最新値でまとめる）
+            const key=(d:string)=> histView==="month" ? d.slice(0,7) : d.slice(0,4);
+            const map=new Map<string,any>();
+            for(const h of D.assetHist) map.set(key(h.date), h); // 昇順なので後勝ち＝各期間の最新
+            const rows=Array.from(map.entries()).map(([k,h])=>({k,assets:h.assets??h.total??0,net:h.net??h.total??0}));
+            rows.sort((a,b)=>a.k.localeCompare(b.k)); // 前期比計算のため昇順
+            const withDelta=rows.map((r,i)=>({...r,delta:i>0?r.net-rows[i-1].net:null}));
+            withDelta.reverse(); // 表示は新しい期間を上に
+            const fmt=(v:number)=>v>=1e8?"¥"+(v/1e8).toFixed(2)+"億":"¥"+v.toLocaleString();
+            const label=(k:string)=> histView==="month" ? `${k.slice(0,4)}年${parseInt(k.slice(5),10)}月` : `${k}年`;
+            return(<div style={cs()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"var(--t4)"}}>📋 推移の数値</h3>
+                <div style={{display:"flex",gap:4}}>
+                  {[["month","月ごと"],["year","年ごと"]].map(([k,l])=>
+                    <button key={k} onClick={()=>sHistView(k as any)} style={{padding:"5px 12px",borderRadius:999,fontSize:12,cursor:"pointer",fontWeight:histView===k?700:400,background:histView===k?"rgba(52,152,219,0.18)":"rgba(var(--wrgb),0.04)",border:"1px solid "+(histView===k?"rgba(52,152,219,0.5)":"rgba(var(--wrgb),0.08)"),color:histView===k?"#3498DB":"var(--t7)"}}>{l}</button>)}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,fontSize:11,color:"var(--t8)",padding:"0 2px 6px",borderBottom:"1px solid rgba(var(--wrgb),0.08)",fontWeight:600}}>
+                <span style={{flex:"0 0 66px"}}>{histView==="month"?"月":"年"}</span>
+                <span style={{flex:1,textAlign:"right"}}>総資産</span>
+                <span style={{flex:1,textAlign:"right"}}>純資産</span>
+                <span style={{flex:"0 0 84px",textAlign:"right"}}>前{histView==="month"?"月":"年"}比</span>
+              </div>
+              <div style={{maxHeight:280,overflow:"auto"}}>
+                {withDelta.map((r)=>(
+                  <div key={r.k} style={{display:"flex",gap:8,fontSize:12,padding:"8px 2px",borderBottom:"1px solid rgba(var(--wrgb),0.04)",alignItems:"baseline"}}>
+                    <span style={{flex:"0 0 66px",color:"var(--t3)",fontWeight:600}}>{label(r.k)}</span>
+                    <span style={{flex:1,textAlign:"right",fontFamily:"monospace",color:"#2ECC71"}}>{fmt(r.assets)}</span>
+                    <span style={{flex:1,textAlign:"right",fontFamily:"monospace",color:"#3498DB",fontWeight:600}}>{fmt(r.net)}</span>
+                    <span style={{flex:"0 0 84px",textAlign:"right",fontFamily:"monospace",fontSize:10.5,color:r.delta==null?"var(--t9)":r.delta>=0?"#2ECC71":"#E74C3C"}}>{r.delta==null?"—":(r.delta>=0?"+":"−")+"¥"+Math.abs(r.delta).toLocaleString()}</span>
+                  </div>))}
+              </div>
+              {withDelta.length>=2&&(()=>{const first=withDelta[withDelta.length-1],last=withDelta[0];const diff=last.net-first.net;
+                return<div style={{marginTop:8,padding:"9px 12px",borderRadius:10,background:"rgba(52,152,219,0.06)",border:"1px solid rgba(52,152,219,0.15)",fontSize:12,color:"var(--t4)",lineHeight:1.6}}>
+                  📊 記録の全期間で純資産は <b style={{color:diff>=0?"#2ECC71":"#E74C3C",fontFamily:"monospace"}}>{diff>=0?"+":"−"}¥{Math.abs(diff).toLocaleString()}</b>（{label(first.k)}→{label(last.k)}）
+                </div>;})()}
             </div>);})()}
 
           {/* ── ③ 将来シミュレーション（競合は有料機能。うちは端末内計算で無料）── */}
