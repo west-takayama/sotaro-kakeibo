@@ -503,10 +503,10 @@ const MONET = {
     card: "",       // クレジットカード発行（明細ページ）
     securities: "", // 証券口座/NISA（資産・目標ページ）
     fp: "",         // 家計/FP無料相談（赤字時）
-    sim: "",        // 格安SIM（通信費）
-    energy: "",     // 電力・ガス比較（光熱費）
+    sim: "https://px.a8.net/svt/ejp?a8mat=4B85P4+9QOC36+50+7LVLZM",       // GMOとくとくBB ホームWi-Fi（通信費）
+    energy: "https://px.a8.net/svt/ejp?a8mat=4B85P4+8WWNUA+50+83ROPU",    // ドコモでんき（光熱費）
     insurance: "",  // 保険見直し（保険）
-    hikari: "",     // 光回線（通信費が特に高い時）
+    hikari: "https://px.a8.net/svt/ejp?a8mat=4B85P4+9MIAUQ+3IB8+614CY",   // SoftBank光（通信費が特に高い時）
     furusato: "",   // ふるさと納税（年末）
   },
 };
@@ -1102,8 +1102,9 @@ export default function Home() {
     const byCat:Record<string,number>={};
     fixedList.forEach(f=>{byCat[f.cat]=(byCat[f.cat]||0)+f.total;});
     const h:{id:string,i:string,tx:string,save:number,url:string,label:string}[]=[];
-    if((byCat["通信費"]||0)>=5000)h.push({id:"sim",i:"📱",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}。格安SIM（月3GBで¥1,000前後）に替えると`,save:Math.max(0,byCat["通信費"]-2000)*12,url:MONET.aff.sim,label:"格安SIMを比較する"});
-    if((byCat["光熱費"]||0)>=13000)h.push({id:"energy",i:"💡",tx:`光熱費が月¥${byCat["光熱費"].toLocaleString()}。電力・ガス会社の見直しで5〜10%下がる例が多く`,save:Math.round(byCat["光熱費"]*0.07)*12,url:MONET.aff.energy,label:"料金プランを比較する"});
+    if((byCat["通信費"]||0)>=5000)h.push({id:"sim",i:"📱",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}。工事不要のホームWi-Fiや格安SIMに替えると`,save:Math.max(0,byCat["通信費"]-2000)*12,url:MONET.aff.sim,label:"工事不要Wi-Fiを見る"});
+    if((byCat["通信費"]||0)>=8000)h.push({id:"hikari",i:"🌐",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}と高め。スマホとセットの光回線に見直すと月々が下がり、高額キャッシュバックがつく例もあり`,save:Math.round((byCat["通信費"]-5000)*0.5)*12,url:MONET.aff.hikari,label:"光回線の乗り換えを見る"});
+    if((byCat["光熱費"]||0)>=10000)h.push({id:"energy",i:"💡",tx:`光熱費が月¥${byCat["光熱費"].toLocaleString()}。電力会社を見直すと5〜10%下がる例が多く、キャッシュバックがつくことも`,save:Math.round(byCat["光熱費"]*0.07)*12,url:MONET.aff.energy,label:"電気の切り替えを見る"});
     if((byCat["保険"]||0)>=10000)h.push({id:"ins",i:"🛡️",tx:`保険が月¥${byCat["保険"].toLocaleString()}。保障の重複を年1回見直すと`,save:Math.round(byCat["保険"]*0.2)*12,url:MONET.aff.insurance,label:"保険を見直す"});
     const subs=fixedList.filter(f=>f.cat==="サブスク");
     if(subs.length>=3){const st=subs.reduce((s,x)=>s+x.total,0);h.push({id:"subs",i:"🔄",tx:`サブスクが${subs.length}件で月¥${st.toLocaleString()}。使っていないものを1つ解約するだけで`,save:Math.round(st/subs.length)*12,url:"",label:""});}
