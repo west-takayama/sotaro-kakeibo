@@ -113,6 +113,9 @@ function parseDateTok(s: string): { ym: string|null; md: string } | null {
   m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/); // MM/DD/YYYY（アメックス等の米国式）
   if (m && +m[1]>=1 && +m[1]<=12 && +m[2]>=1 && +m[2]<=31)
     return { ym: m[3]+"-"+m[1].padStart(2,"0"), md: m[1].padStart(2,"0")+"/"+m[2].padStart(2,"0") };
+  m = t.match(/^(\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/); // YY.MM.DD（三菱UFJニコス等の下2桁年表記 例:26.06.13）
+  if (m && +m[1]>=20 && +m[1]<=49 && +m[2]>=1 && +m[2]<=12 && +m[3]>=1 && +m[3]<=31)
+    return { ym: "20"+m[1]+"-"+m[2].padStart(2,"0"), md: m[2].padStart(2,"0")+"/"+m[3].padStart(2,"0") };
   m = t.match(/^(\d{1,2})[\/\-.月](\d{1,2})日?$/);
   if (m && +m[1]>=1 && +m[1]<=12 && +m[2]>=1 && +m[2]<=31)
     return { ym: null, md: String(+m[1]).padStart(2,"0")+"/"+String(+m[2]).padStart(2,"0") };
@@ -277,9 +280,9 @@ function parsePdfStatement(text: string, rules?: Record<string, string>): any[] 
       }
     }
     if (toks.length < 3) continue;
-    // 日付は行頭が基本だが、行番号などが先頭に付く様式のため2番目まで探す
-    let dt = parseDateTok(toks[0]);
-    if (!dt && toks.length >= 4 && /^[\d※*]+$/.test(toks[0])) { const d2 = parseDateTok(toks[1]); if (d2) { dt = d2; toks = toks.slice(1); } }
+    // 日付は行頭が基本だが、行番号・利用者名などが先頭に付く様式（三菱UFJニコス等）のため先頭3トークン以内で探す
+    let dt: { ym: string|null; md: string } | null = null;
+    for (let i = 0; i < Math.min(3, toks.length - 1); i++) { const d = parseDateTok(toks[i]); if (d) { dt = d; if (i > 0) toks = toks.slice(i); break; } }
     if (!dt) continue;
     let amtIdx = -1, amount: number | null = null;
     for (let i = toks.length - 1; i >= 1; i--) { const a = parseAmtTok(toks[i]); if (a != null) { amtIdx = i; amount = a; break; } }
@@ -781,7 +784,13 @@ export default function Home() {
           const garbled = (body.match(/[\u00C0-\u02FF\uE000-\uF8FF\uFFFD\u25A1]/g) || []).length;
           if (chars < 30) sUpR("❌ このPDFには文字情報がほぼ含まれていません（画像スキャン型のPDF）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックス等の主要カードのCSVに対応しています）。");
           else if (garbled / chars > 0.12) sUpR("❌ このPDFは特殊なフォントで作られており、文字情報が壊れた状態で記録されています（アメックスの明細書PDF等で確認されている仕様で、どのアプリでも読み取れません）。カード会社の会員サイトから「CSV形式」でダウンロードして取り込んでください（アメックスのCSVは対応済みです）。");
-          else { sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。`); sUpDbg(text.split("\n").filter(l=>l.trim()).slice(0,18).join("\n")); }
+          else {
+            sUpR(`❌ PDFの様式を認識できませんでした（テキスト${lines}行は読めています）。お手数ですが、カード会社サイトから「CSV形式」でのダウンロードをお試しください。`);
+            // 診断: ヘッダーより「取引行の候補（日付や金額らしき数字を含む行）」を優先表示すると様式対応がしやすい
+            const all = text.split("\n").map(l => l.trim()).filter(Boolean);
+            const cand = all.filter(l => /\d{1,2}[\/\-.][0-9]{1,2}/.test(l) || /\d,\d{3}/.test(l) || /[0-9]{3,}円/.test(l));
+            sUpDbg((cand.length >= 3 ? cand : all).slice(0, 30).join("\n"));
+          }
         } else sUpR("❌ 取引データを抽出できませんでした。");
       } else sUpPrev(txns);
     } catch(e:any) {
