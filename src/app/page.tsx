@@ -506,6 +506,7 @@ const MONET = {
     card: "",       // クレジットカード発行（明細ページ）
     securities: "", // 証券口座/NISA（資産・目標ページ）
     fp: "",         // 家計/FP無料相談（赤字時）
+    mobile: "https://px.a8.net/svt/ejp?a8mat=4B85P4+78RVQQ+5W58+5YRHE",   // 楽天モバイル（格安SIM・スマホ代）
     sim: "https://px.a8.net/svt/ejp?a8mat=4B85P4+9QOC36+50+7LVLZM",       // GMOとくとくBB ホームWi-Fi（通信費）
     energy: "https://px.a8.net/svt/ejp?a8mat=4B85P4+8WWNUA+50+83ROPU",    // ドコモでんき（光熱費）
     insurance: "",  // 保険見直し（保険）
@@ -1111,7 +1112,8 @@ export default function Home() {
     const byCat:Record<string,number>={};
     fixedList.forEach(f=>{byCat[f.cat]=(byCat[f.cat]||0)+f.total;});
     const h:{id:string,i:string,tx:string,save:number,url:string,label:string}[]=[];
-    if((byCat["通信費"]||0)>=5000)h.push({id:"sim",i:"📱",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}。工事不要のホームWi-Fiや格安SIMに替えると`,save:Math.max(0,byCat["通信費"]-2000)*12,url:MONET.aff.sim,label:"工事不要Wi-Fiを見る"});
+    if((byCat["通信費"]||0)>=4000)h.push({id:"mobile",i:"📱",tx:`スマホ代を含む通信費が月¥${byCat["通信費"].toLocaleString()}。格安SIM（楽天モバイル）なら使ったぶんだけの料金で、月々をぐっと下げられる例が多く`,save:Math.max(0,byCat["通信費"]-3278)*12,url:MONET.aff.mobile,label:"楽天モバイルを見る"});
+    if((byCat["通信費"]||0)>=7000)h.push({id:"sim",i:"🛜",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}。自宅のネットを工事不要の置くだけホームWi-Fiにまとめると`,save:Math.max(0,byCat["通信費"]-2000)*12,url:MONET.aff.sim,label:"工事不要Wi-Fiを見る"});
     if((byCat["通信費"]||0)>=8000)h.push({id:"hikari",i:"🌐",tx:`通信費が月¥${byCat["通信費"].toLocaleString()}と高め。スマホとセットの光回線に見直すと月々が下がり、高額キャッシュバックがつく例もあり`,save:Math.round((byCat["通信費"]-5000)*0.5)*12,url:MONET.aff.hikari,label:"光回線の乗り換えを見る"});
     if((byCat["光熱費"]||0)>=10000)h.push({id:"energy",i:"💡",tx:`光熱費が月¥${byCat["光熱費"].toLocaleString()}。電力会社を見直すと5〜10%下がる例が多く、キャッシュバックがつくことも`,save:Math.round(byCat["光熱費"]*0.07)*12,url:MONET.aff.energy,label:"電気の切り替えを見る"});
     if((byCat["保険"]||0)>=10000)h.push({id:"ins",i:"🛡️",tx:`保険が月¥${byCat["保険"].toLocaleString()}。保障の重複を年1回見直すと`,save:Math.round(byCat["保険"]*0.2)*12,url:MONET.aff.insurance,label:"保険を見直す"});
