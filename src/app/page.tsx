@@ -432,6 +432,15 @@ const DEF = { months:{} as any, cur:"", assets:[] as any[], liabilities:[] as an
 const localYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const localYMD = (d = new Date()) => `${localYM(d)}-${String(d.getDate()).padStart(2,"0")}`;
 const freshState = () => { const m = localYM(); return { ...DEF, months:{ [m]: { incomes:[] as any[], manualExp:[] as any[], cardExp:[] as any[] } }, cur:m }; };
+// 資産の記録を「1日1点」に整える。同じ日に複数あればその日の最後の値だけ残し、日付順に並べ直す。
+// （登録・修正のたびに点が増えると、1日の中で資産が乱高下したようなグラフになってしまうため）
+function tidyHist(h: any[]): any[] {
+  const m = new Map<string, any>();
+  (h || []).forEach((x: any) => { if (x && x.date) m.set(String(x.date), x); }); // 後勝ち＝その日の最新
+  return Array.from(m.values())
+    .sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)))
+    .slice(-120);
+}
 // 初めての人が完成イメージを掴むためのサンプルデータ（現在月＋前月）
 const sampleState = () => {
   const now = new Date(); const cur = localYM(now);
@@ -673,6 +682,7 @@ export default function Home() {
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
   const [fAT,sfAT]=useState("savings"); const [fAA,sfAA]=useState(""); const [fAN,sfAN]=useState("");
   // 資産スクショの取り込み（OCR）
+  const [shHist,sShHist]=useState(false); // 資産推移の記録を修正するシート
   const [shOcr,sShOcr]=useState(false); const [ocrL,sOcrL]=useState(false); const [ocrP,sOcrP]=useState(0);
   const [ocrRows,sOcrRows]=useState<any[]|null>(null); const [ocrErr,sOcrErr]=useState(""); const [ocrRaw,sOcrRaw]=useState("");
   const [fLT,sfLT]=useState("loan_home"); const [fLA,sfLA]=useState(""); const [fLN,sfLN]=useState("");
@@ -702,7 +712,7 @@ export default function Home() {
     try{await navigator.clipboard.writeText(text+" "+url);showToast("📋 紹介文をコピーしました。SNSやLINEに貼り付けて共有できます");}catch{showToast("⚠️ コピーできませんでした");}
   };
 
-  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:s.assetHist||[],recurring:s.recurring||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
+  useEffect(()=>{const s=LD();if(s?.months&&Object.keys(s.months).length){const cur=fixCur(s);const months={...s.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...s,months,cur,assets:s.assets||[],liabilities:s.liabilities||[],assetHist:tidyHist(s.assetHist||[]),recurring:s.recurring||[],rules:s.rules||{},budget:s.budget||{total:0,cat:{}},cats:s.cats||{}});} else sD(freshState()); sRdy(true);},[]);
   useEffect(()=>{if(rdy&&!SV(D)) showToast("⚠️ 保存できませんでした。端末の空き容量やプライベートモードをご確認ください");},[D,rdy,showToast]);
   // オフライン対応: Service Worker登録（一度開けば圏外でも起動できる）
   useEffect(()=>{if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});},[]);
@@ -878,7 +888,8 @@ export default function Home() {
     sfIA("");sfIN("");sEInId(null);sShI(false);};
   // 支出は連続入力できるようモーダルを閉じない（金額・内容だけクリア）
   const addE=()=>{if(!fEA||Number(fEA)<=0)return;const d=fED||new Date().toLocaleDateString("ja-JP",{month:"2-digit",day:"2-digit"});uM((m:any)=>({...m,manualExp:[...m.manualExp,{date:d,description:fEN||fEC,amount:Number(fEA),category:fEC,source:"manual",id:Date.now()}]}));vib(12);showToast(`✅ ¥${Number(fEA).toLocaleString()} を追加（続けて入力できます）`);sfEA("");sfEN("");};
-  const snap=(p:any,assets:any[],liabs:any[])=>{const now=localYMD();const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return[...(p.assetHist||[]),{date:now,assets:a,liab:l,net:a-l,total:a}].slice(-120);};
+  // 記録はその日の1点だけ更新する（同じ日に何度直しても点は増えない）
+  const snap=(p:any,assets:any[],liabs:any[])=>{const now=localYMD();const a=assets.reduce((s:number,x:any)=>s+x.amount,0);const l=liabs.reduce((s:number,x:any)=>s+x.amount,0);return tidyHist([...(p.assetHist||[]).filter((x:any)=>x.date!==now),{date:now,assets:a,liab:l,net:a-l,total:a}]);};
   const openAs=(a?:any)=>{if(a){sfAT(a.type);sfAA(String(a.amount));sfAN(a.note||"");sEAsId(a.id);}else{sfAT("savings");sfAA("");sfAN("");sEAsId(null);}sShA(true);};
   const openLi=(a?:any)=>{if(a){sfLT(a.type);sfLA(String(a.amount));sfLN(a.note||"");sELiId(a.id);}else{sfLT("loan_home");sfLA("");sfLN("");sELiId(null);}sShL(true);};
   const addAs=()=>{if(!fAA)return;
@@ -892,6 +903,18 @@ export default function Home() {
     sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});showToast("✅ 負債を更新しました");sfLA("");sfLN("");sELiId(null);sShL(false);};
   const delAs=(id:number)=>sD((p:any)=>{const na=(p.assets||[]).filter((a:any)=>a.id!==id);return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});
   const delLi=(id:number)=>sD((p:any)=>{const nl=(p.liabilities||[]).filter((a:any)=>a.id!==id);return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});
+
+  // ── 資産推移の記録を直す（誤った金額・日付の修正、いらない点の削除）──
+  // 日付が一意になるよう tidyHist で整えてあるので、日付をキーに1件を特定できる
+  const histSet=(date:string,k:string,v:string)=>sD((p:any)=>({...p,assetHist:tidyHist((p.assetHist||[]).map((x:any)=>{
+    if(x.date!==date)return x;
+    const n:any={...x};
+    if(k==="date"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return x; n.date=v; }
+    else n[k]=Math.max(0,parseInt(String(v).replace(/[^\d]/g,"")||"0",10));
+    const a=Number(n.assets??n.total??0), l=Number(n.liab??0);
+    return {...n,assets:a,total:a,liab:l,net:a-l};
+  }))}));
+  const histDel=(date:string)=>sD((p:any)=>({...p,assetHist:(p.assetHist||[]).filter((x:any)=>x.date!==date)}));
 
   // ── 資産スクショの取り込み（証券・銀行アプリの残高画面を撮って登録する）──
   const handleShot=async(file:File)=>{
@@ -1041,7 +1064,7 @@ export default function Home() {
     dl(csv,"text/csv;charset=utf-8",`kakeibo-${localYMD()}.csv`);
     showToast("📊 CSVを書き出しました");
   }catch(e:any){alert("CSV書き出しに失敗しました: "+e.message);}};
-  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;const cur=fixCur(o);const months={...o.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...o,months,cur,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:o.assetHist||[],goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}},cats:o.cats||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
+  const importData=async(file:File)=>{try{const o=JSON.parse(await file.text());if(!o||typeof o!=="object"||!o.months){alert("❌ このアプリのバックアップファイル(JSON)ではないようです。");return;}if(!confirm("現在のデータを、選んだファイルの内容で置き換えます。よろしいですか？（先に今のデータを書き出しておくと安心です）"))return;const cur=fixCur(o);const months={...o.months};if(!months[cur])months[cur]={incomes:[],manualExp:[],cardExp:[]};sD({...DEF,...o,months,cur,assets:o.assets||[],liabilities:o.liabilities||[],assetHist:tidyHist(o.assetHist||[]),goal:o.goal||{target:0,label:""},rules:o.rules||{},budget:o.budget||{total:0,cat:{}},cats:o.cats||{}});alert("✅ データを読み込みました！");}catch(e:any){alert("❌ 読み込みに失敗しました: "+e.message);}};
 
   // カテゴリ変更＝学習：同じ店名の取引を全て変更し、店名→カテゴリを記憶して次回の取込に反映
   const hCC=useCallback((tx:any,val:string)=>{
@@ -1882,7 +1905,7 @@ export default function Home() {
             return(<div style={cs()}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <h3 style={{fontSize:14,fontWeight:600,margin:0,color:"var(--t4)"}}>📈 資産推移</h3>
-                <button onClick={()=>{const last=D.assetHist[D.assetHist.length-1];if(confirm(`直近の記録（${last?.date}）を取り消しますか？誤入力でグラフが崩れたときに使えます。`)){sD((p:any)=>({...p,assetHist:p.assetHist.slice(0,-1)}));showToast("↩ 直近の記録を取り消しました");}}} style={{background:"none",border:"none",color:"var(--t8)",padding:"4px 6px",fontSize:11,cursor:"pointer"}}>↩ 直近を取り消す</button>
+                <button onClick={()=>sShHist(true)} style={{background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:8,color:"var(--t6)",padding:"5px 10px",fontSize:11,cursor:"pointer",fontWeight:600}}>✏️ 記録を修正</button>
               </div>
               <div style={{display:"flex",gap:6,marginBottom:8}}>
                 {[["3m","3ヶ月"],["6m","6ヶ月"],["1y","1年"],["all","全期間"]].map(([k,l])=>
@@ -2332,6 +2355,39 @@ export default function Home() {
           <div style={{fontSize:10,color:"var(--t8)",fontFamily:"monospace",whiteSpace:"pre-wrap",wordBreak:"break-all",maxHeight:180,overflow:"auto",lineHeight:1.6}}>{upDbg}</div>
           <div style={{fontSize:11,color:"var(--t9)",marginTop:6}}>この部分のスクリーンショット（金額が写っていても隠してOK）を開発側に送っていただければ、この様式に対応します。</div>
         </div>}
+      </BS>
+
+      {/* ── 資産推移の記録を修正する ── */}
+      <BS open={shHist} onClose={()=>sShHist(false)} title="✏️ 資産推移の記録を修正">
+        <p style={{fontSize:13,color:"var(--t5)",margin:"0 0 10px",lineHeight:1.8}}>グラフのもとになっている記録の一覧です。金額や日付を直したり、いらない記録を消したりできます。<br/><span style={{fontSize:12,color:"var(--t7)"}}>記録は<b style={{color:"var(--t4)"}}>1日に1つ</b>です。同じ日に資産を何度直しても、その日の記録が上書きされるだけで点は増えません。</span></p>
+        {(D.assetHist||[]).length===0
+          ? <p style={{fontSize:13,color:"var(--t7)",textAlign:"center",padding:"24px 0"}}>まだ記録がありません。<br/>資産を登録すると、その日から記録が残ります。</p>
+          : <>
+            <div style={{maxHeight:340,overflow:"auto",border:"1px solid rgba(var(--wrgb),0.06)",borderRadius:10,padding:"2px 8px",marginBottom:10}}>
+              {[...(D.assetHist||[])].reverse().map((h:any)=>{
+                const a=Number(h.assets??h.total??0), l=Number(h.liab??0);
+                return(<div key={h.date} style={{padding:"9px 0",borderBottom:"1px solid rgba(var(--wrgb),0.04)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <input type="date" value={h.date} onChange={(e)=>histSet(h.date,"date",e.target.value)} aria-label="記録した日"
+                      style={{flex:1,minWidth:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:6,color:"var(--t3)",fontSize:13,padding:"5px 6px",outline:"none"}}/>
+                    <span style={{fontSize:12,color:"var(--t7)",flexShrink:0}}>純資産</span>
+                    <span style={{fontSize:13,fontFamily:"monospace",fontWeight:700,color:a-l>=0?"#3498DB":"#E74C3C",flexShrink:0}}>{a-l<0?"-":""}¥{Math.abs(a-l).toLocaleString()}</span>
+                    <button onClick={()=>{if(confirm(`${h.date} の記録を消しますか？`)){histDel(h.date);showToast("🗑 記録を削除しました");}}} aria-label="この記録を削除"
+                      style={{flexShrink:0,background:"rgba(255,107,107,0.1)",border:"1px solid rgba(255,107,107,0.25)",borderRadius:6,color:"#FF6B6B",fontSize:13,padding:"4px 8px",cursor:"pointer"}}>🗑</button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:2}}>
+                    <span style={{fontSize:11,color:"var(--t8)",width:34,flexShrink:0}}>総資産</span>
+                    <input type="text" inputMode="numeric" value={a.toLocaleString()} onChange={(e)=>histSet(h.date,"assets",e.target.value)} aria-label="総資産"
+                      style={{flex:1,minWidth:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:6,color:"#2ECC71",fontSize:13,fontFamily:"monospace",fontWeight:600,padding:"5px 6px",outline:"none"}}/>
+                    <span style={{fontSize:11,color:"var(--t8)",width:24,flexShrink:0}}>負債</span>
+                    <input type="text" inputMode="numeric" value={l.toLocaleString()} onChange={(e)=>histSet(h.date,"liab",e.target.value)} aria-label="負債"
+                      style={{flex:1,minWidth:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:6,color:"#FF6B6B",fontSize:13,fontFamily:"monospace",fontWeight:600,padding:"5px 6px",outline:"none"}}/>
+                  </div>
+                </div>);})}
+            </div>
+            <p style={{fontSize:11,color:"var(--t9)",margin:"0 0 10px",lineHeight:1.7}}>※ ここで直せるのはグラフ用の記録だけです。今の資産そのものを変えたいときは「＋資産を追加」から直してください。</p>
+          </>}
+        <button onClick={()=>sShHist(false)} style={{width:"100%",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",color:"var(--t4)",padding:"11px 0",borderRadius:10,fontSize:15,cursor:"pointer",fontWeight:600}}>閉じる</button>
       </BS>
 
       {/* ── 資産スクショの取り込み（証券・銀行アプリの残高画面をそのまま登録）── */}
