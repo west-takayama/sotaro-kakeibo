@@ -2,7 +2,8 @@
 // 方針: ページ(HTML)はネット優先（常に最新）→ 圏外時はキャッシュで起動。
 //       ビルド済みアセット(/_next/static, cmaps, アイコン等)はキャッシュ優先（ハッシュ付きで不変）。
 const CACHE = "kakeibo-sw-v1";
-const STATIC_PAT = /^\/(_next\/static\/|cmaps\/|icon-|og\.png|pdf\.worker\.min\.js|manifest\.json)/;
+// tess/ はスクショ読み取り(OCR)の実行ファイル。使った人の端末にだけ保存され、2回目以降は即時＆オフラインで動く
+const STATIC_PAT = /^\/(_next\/static\/|cmaps\/|tess\/|icon-|og\.png|pdf\.worker\.min\.js|manifest\.json)/;
 
 self.addEventListener("install", (e) => { self.skipWaiting(); });
 

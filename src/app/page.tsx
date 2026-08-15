@@ -41,6 +41,137 @@ const LT = [
   {id:"loan_personal",l:"カードローン",i:"🏧",c:"#C0392B"},{id:"loan_other",l:"その他負債",i:"📋",c:"#95A5A6"},
 ];
 
+// ═══ 資産スクショ(OCR)の見出し語 → 資産種別 ═══
+// 証券・銀行アプリごとの表記ゆれを吸収する。OCRは漢字を誤読しやすい（銀行預金→搬行預金 等）ため、
+// 完全一致ではなく「最長共通部分文字列」で照合し、一致した文字数が多い種別を採用する。
+const ASSET_KW: [string, string][] = [
+  ["投資信託","funds"],["投信","funds"],["ファンド","funds"],["つみたて","funds"],["ＮＩＳＡ","funds"],["NISA","funds"],
+  ["国内株式","stocks"],["外国株式","stocks"],["米国株","stocks"],["現物株","stocks"],["持株会","stocks"],["株式","stocks"],
+  ["銀行預金","savings"],["普通預金","savings"],["円預金","savings"],["貯蓄預金","savings"],["預金","savings"],["普通","savings"],
+  ["定期預金","fixed_deposit"],["定期","fixed_deposit"],
+  ["個人向け国債","bonds"],["債券","bonds"],["国債","bonds"],["社債","bonds"],
+  ["暗号資産","crypto"],["仮想通貨","crypto"],["ビットコイン","crypto"],
+  ["確定拠出","pension"],["iDeCo","pension"],["イデコ","pension"],["年金","pension"],
+  ["積立保険","insurance"],["保険","insurance"],
+  ["不動産","realestate"],["現金","cash"],
+  ["預り金","other_a"],["ＭＲＦ","other_a"],["MRF","other_a"],["外貨","other_a"],
+];
+// 合計行は明細と二重計上になるため、既定では取り込まない（プレビューでチェックすれば取り込める）
+const ASSET_SUM = /合計|総額|総資産|評価額合計|資産計/;
+// 最長共通部分文字列の長さ（OCRの誤読を許容した見出し照合に使う）
+function lcsLen(a: string, b: string): number {
+  if (!a || !b) return 0;
+  let best = 0; const dp = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = 0;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i-1] === b[j-1] ? prev + 1 : 0;
+      if (dp[j] > best) best = dp[j];
+      prev = tmp;
+    }
+  }
+  return best;
+}
+// 見出し文字列 → {種別, 正規化ラベル}。2文字以上一致しなければ不明（ユーザーに選んでもらう）
+function matchAssetType(label: string): { type: string; kw: string } | null {
+  const s = label.normalize("NFKC");
+  let best: { type: string; kw: string; sc: number } | null = null;
+  for (const [kw, type] of ASSET_KW) {
+    const sc = lcsLen(s, kw.normalize("NFKC"));
+    if (sc < 2) continue;
+    if (!best || sc > best.sc || (sc === best.sc && kw.length > best.kw.length)) best = { type, kw, sc };
+  }
+  return best ? { type: best.type, kw: best.kw } : null;
+}
+// OCRの数字トークン → 金額。カンマ落ち・末尾の「円」誤読(g/q/ぃ)・英数字の取り違えを吸収する。
+// 増減額(+220,241)・率(+14.53%)・日時(08/15, 21:56)は資産額ではないので弾く。
+function ocrAmount(tok: string): number | null {
+  const t = tok.normalize("NFKC").trim();
+  if (/[+\-±%/:()（）]/.test(t)) return null;
+  let s = t.replace(/[¥￥円、,．.\s]/g, "").replace(/[ぁ-んァ-ヶー]/g, "");
+  s = s.replace(/[OoＯ]/g,"0").replace(/[lIiＩ|]/g,"1").replace(/[Ss]/g,"5").replace(/[Bb]/g,"8").replace(/[Zz]/g,"2");
+  s = s.replace(/[a-zA-Z]/g, ""); // 「円」を g/q 等と誤読した残りを落とす
+  if (!/^\d{3,12}$/.test(s)) return null; // 3桁未満は行番号・順位などの可能性が高い
+  const n = parseInt(s, 10);
+  return n >= 100 ? n : null;
+}
+// OCRの単語(bbox付き)から「見出し＋金額」の行を組み立てる。
+// 金額と縦位置が重なり、かつ金額より左にある単語をつないだものを見出しとみなす。
+function rowsFromWords(words: any[]): any[] {
+  const amts: any[] = [], labs: any[] = [];
+  for (const w of words) {
+    const txt = String(w.text || "").trim(); if (!txt) continue;
+    const a = ocrAmount(txt);
+    if (a != null) amts.push({ ...w, amount: a });
+    else if (/[ぁ-んァ-ヶ一-龠A-Za-zＡ-Ｚａ-ｚ]/.test(txt)) labs.push(w);
+  }
+  const rows: any[] = [];
+  for (const a of amts) {
+    const ah = a.bbox.y1 - a.bbox.y0;
+    const near = labs.filter(b => {
+      const ov = Math.min(a.bbox.y1, b.bbox.y1) - Math.max(a.bbox.y0, b.bbox.y0);
+      return b.bbox.x1 <= a.bbox.x0 + 6 && ov > Math.min(ah, b.bbox.y1 - b.bbox.y0) * 0.35;
+    }).sort((p, q) => p.bbox.x0 - q.bbox.x0);
+    if (!near.length) continue; // 見出しのない数字（残高の内訳表示など）は拾わない
+    const label = near.map(b => b.text).join("").replace(/[\s@$&©®・･:：|]/g, "");
+    if (label.length < 2) continue;
+    rows.push({ label, amount: a.amount, y: a.bbox.y0, digits: String(a.amount).length });
+  }
+  // 同じ行に数字が複数ある場合（時価評価額と増減など）は桁数の多いほうを採用する
+  const byRow: any[] = [];
+  rows.sort((p, q) => p.y - q.y).forEach(r => {
+    const prev = byRow[byRow.length - 1];
+    if (prev && Math.abs(prev.y - r.y) < 24 && prev.label === r.label) {
+      if (r.digits > prev.digits) byRow[byRow.length - 1] = r;
+    } else byRow.push(r);
+  });
+  return byRow.map((r, i) => {
+    const m = matchAssetType(r.label);
+    const isSum = ASSET_SUM.test(r.label);
+    return {
+      id: Date.now() + i, label: r.label, amount: r.amount,
+      type: m ? m.type : "other_a",
+      note: m ? m.kw : r.label,       // 正規化した見出しを控えに使うと、次回の取り込みで同じ資産だと判定できる
+      matched: !!m && !isSum,
+      _skip: !m || isSum,             // 見出しを判別できない行・合計行は既定で取り込まない
+    };
+  });
+}
+// スクショを読み取りやすい大きさに整える（小さすぎる画像は拡大、大きすぎる画像は縮小して速度を確保）
+async function prepShot(file: File): Promise<any> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const w0 = bmp.width;
+    const scale = w0 < 900 ? Math.min(2, 900 / w0) : w0 > 2000 ? 2000 / w0 : 1;
+    if (scale === 1) { bmp.close?.(); return file; }
+    const w = Math.round(w0 * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d"); if (!ctx) { bmp.close?.(); return file; }
+    ctx.drawImage(bmp, 0, 0, w, h); bmp.close?.();
+    return cv;
+  } catch { return file; }
+}
+// ═══ 資産スクショの読み取り（OCR）═══
+// tesseract.js を必要になった時だけ読み込み、処理は全て端末内で完結する（画像は外部に送らない）
+async function ocrAssetRows(file: File, onProg?: (p: number) => void): Promise<{ rows: any[]; raw: string }> {
+  const T: any = await import("tesseract.js");
+  const worker = await T.createWorker("jpn", 1, {
+    workerPath: "/tess/worker.min.js",
+    corePath: "/tess/tesseract-core-simd-lstm.wasm.js",
+    langPath: "/tess",
+    logger: (m: any) => { if (m.status === "recognizing text") onProg?.(m.progress || 0); },
+  });
+  try {
+    const img = await prepShot(file);
+    const r = await worker.recognize(img, {}, { blocks: true, text: true });
+    const words: any[] = [];
+    (r.data.blocks || []).forEach((b: any) => (b.paragraphs || []).forEach((p: any) =>
+      (p.lines || []).forEach((l: any) => (l.words || []).forEach((w: any) => words.push(w)))));
+    return { rows: rowsFromWords(words), raw: String(r.data.text || "") };
+  } finally { try { await worker.terminate(); } catch {} }
+}
+
 // ═══ CSV Parser ═══
 // 半角カナや小書きカナの違いを吸収して照合（PDF明細は半角カナが多い）
 const KN_S = "ァィゥェォッャュョヮ", KN_B = "アイウエオツヤユヨワ";
@@ -541,6 +672,9 @@ export default function Home() {
   const [fIT,sfIT]=useState("salary"); const [fIA,sfIA]=useState(""); const [fIN,sfIN]=useState(""); const [eInId,sEInId]=useState<number|null>(null);
   const [fEC,sfEC]=useState("食費（自炊）"); const [fEA,sfEA]=useState(""); const [fEN,sfEN]=useState(""); const [fED,sfED]=useState("");
   const [fAT,sfAT]=useState("savings"); const [fAA,sfAA]=useState(""); const [fAN,sfAN]=useState("");
+  // 資産スクショの取り込み（OCR）
+  const [shOcr,sShOcr]=useState(false); const [ocrL,sOcrL]=useState(false); const [ocrP,sOcrP]=useState(0);
+  const [ocrRows,sOcrRows]=useState<any[]|null>(null); const [ocrErr,sOcrErr]=useState(""); const [ocrRaw,sOcrRaw]=useState("");
   const [fLT,sfLT]=useState("loan_home"); const [fLA,sfLA]=useState(""); const [fLN,sfLN]=useState("");
   const [eAsId,sEAsId]=useState<number|null>(null); const [eLiId,sELiId]=useState<number|null>(null);
   const [fGA,sfGA]=useState(""); const [fGL,sfGL]=useState(""); const [fNWA,sfNWA]=useState(""); const [fNM,sfNM]=useState("");
@@ -758,6 +892,42 @@ export default function Home() {
     sD((p:any)=>{const nl=[...(p.liabilities||[]).filter((a:any)=>a.id!==eLiId),{type:fLT,amount:Number(fLA),note:fLN,id:eLiId||Date.now()}];return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});showToast("✅ 負債を更新しました");sfLA("");sfLN("");sELiId(null);sShL(false);};
   const delAs=(id:number)=>sD((p:any)=>{const na=(p.assets||[]).filter((a:any)=>a.id!==id);return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};});
   const delLi=(id:number)=>sD((p:any)=>{const nl=(p.liabilities||[]).filter((a:any)=>a.id!==id);return{...p,liabilities:nl,assetHist:snap(p,p.assets||[],nl)};});
+
+  // ── 資産スクショの取り込み（証券・銀行アプリの残高画面を撮って登録する）──
+  const handleShot=async(file:File)=>{
+    sOcrL(true);sOcrErr("");sOcrRows(null);sOcrRaw("");sOcrP(0);
+    try{
+      const {rows,raw}=await ocrAssetRows(file,(p)=>sOcrP(p));
+      if(!rows.length){sOcrErr("この画像から金額を読み取れませんでした。残高の一覧が大きく写るように撮り直すか、下の「＋資産を追加」から手入力してください。");sOcrRaw(raw.split("\n").filter(l=>l.trim()).slice(0,14).join("\n"));}
+      else sOcrRows(rows);
+    }catch(e:any){
+      sOcrErr("読み取り機能を起動できませんでした（お使いのブラウザが未対応の可能性があります）。「＋資産を追加」から手入力してください。");
+      if(e?.message)sOcrRaw(String(e.message).slice(0,200));
+    }finally{sOcrL(false);}
+  };
+  // 既存の登録（種類＋控えが同じもの）があれば金額を更新、なければ新規追加する
+  const ocrTarget=(r:any)=>(D.assets||[]).find((a:any)=>a.type===r.type&&(a.note||"")===(r.note||""));
+  const ocrToggle=(i:number)=>sOcrRows((p:any)=>p.map((r:any,j:number)=>j===i?{...r,_skip:!r._skip}:r));
+  const ocrSet=(i:number,k:string,v:any)=>sOcrRows((p:any)=>p.map((r:any,j:number)=>j===i?{...r,[k]:v}:r));
+  const commitShot=()=>{
+    const inc=(ocrRows||[]).filter((r:any)=>!r._skip&&Number(r.amount)>0);
+    if(!inc.length)return;
+    // 件数は sD の更新関数が非同期に走る前に数えておく（中で数えるとトーストに間に合わない）
+    const seen=new Set((D.assets||[]).map((a:any)=>a.type+"|"+(a.note||"")));
+    let upd=0,add=0;
+    inc.forEach((r:any)=>{const k=r.type+"|"+(r.note||"");if(seen.has(k))upd++;else{add++;seen.add(k);}});
+    sD((p:any)=>{
+      const na=[...(p.assets||[])];
+      inc.forEach((r:any,k:number)=>{
+        const i=na.findIndex((a:any)=>a.type===r.type&&(a.note||"")===(r.note||""));
+        if(i>=0)na[i]={...na[i],amount:Number(r.amount)};
+        else na.push({type:r.type,amount:Number(r.amount),note:r.note||"",id:Date.now()+k});
+      });
+      return{...p,assets:na,assetHist:snap(p,na,p.liabilities||[])};
+    });
+    vib(12);showToast(`✅ ${add>0?`${add}件を追加`:""}${add>0&&upd>0?"・":""}${upd>0?`${upd}件を更新`:""}しました`);
+    sShOcr(false);sOcrRows(null);sOcrErr("");sOcrRaw("");
+  };
 
   // 年なし日付(MM/DD)のCSVは表示中の月から年を推定（月が2つ以上先なら前年とみなす）
   const inferYm = (date:string) => {
@@ -1700,6 +1870,7 @@ export default function Home() {
               <button onClick={()=>openAs()} style={{flex:1,background:"rgba(46,204,113,0.1)",border:"1px solid rgba(46,204,113,0.2)",color:"#2ECC71",padding:"8px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600}}>＋ 資産を追加</button>
               <button onClick={()=>openLi()} style={{flex:1,background:"rgba(255,107,107,0.1)",border:"1px solid rgba(255,107,107,0.2)",color:"#FF6B6B",padding:"8px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600}}>＋ 負債を追加</button>
             </div>
+            <button onClick={()=>{sShOcr(true);sOcrRows(null);sOcrErr("");sOcrRaw("");}} style={{marginTop:8,width:"100%",background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.28)",color:"#B07CC6",padding:"10px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:700}}>📷 スクショから自動で取り込む</button>
           </div>
 
           {/* ── 資産推移グラフ（総資産＋純資産の2系列・期間切替つき）── */}
@@ -2161,6 +2332,75 @@ export default function Home() {
           <div style={{fontSize:10,color:"var(--t8)",fontFamily:"monospace",whiteSpace:"pre-wrap",wordBreak:"break-all",maxHeight:180,overflow:"auto",lineHeight:1.6}}>{upDbg}</div>
           <div style={{fontSize:11,color:"var(--t9)",marginTop:6}}>この部分のスクリーンショット（金額が写っていても隠してOK）を開発側に送っていただければ、この様式に対応します。</div>
         </div>}
+      </BS>
+
+      {/* ── 資産スクショの取り込み（証券・銀行アプリの残高画面をそのまま登録）── */}
+      <BS open={shOcr} onClose={()=>{sShOcr(false);sOcrRows(null);sOcrErr("");sOcrRaw("");}} title="📷 スクショから資産を取り込む">
+        {!ocrRows&&!ocrL&&<>
+          <p style={{fontSize:14,color:"var(--t4)",margin:"0 0 8px",lineHeight:1.7}}>証券会社や銀行アプリの<b style={{color:"var(--t2)"}}>残高が一覧で写っている画面</b>のスクリーンショットを選んでください。<br/><span style={{fontSize:12,color:"var(--t7)"}}>「投資信託 1,735,534円」のように<b>商品名と金額が横に並んだ画面</b>だと正確に読み取れます。</span></p>
+          <div style={{padding:"9px 12px",borderRadius:10,background:"rgba(46,204,113,0.07)",border:"1px solid rgba(46,204,113,0.18)",fontSize:12,color:"#2ECC71",lineHeight:1.7,marginBottom:12}}>
+            🔒 読み取りはすべて<b>この端末の中だけ</b>で行われます。画像も金額も、外部のサーバーには一切送信されません。
+          </div>
+          <div onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept="image/*";inp.onchange=(e:any)=>e.target.files[0]&&handleShot(e.target.files[0]);inp.click();}}
+            style={{border:"2px dashed var(--bd)",borderRadius:14,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:"rgba(var(--wrgb),0.02)",marginBottom:10}}>
+            <div style={{fontSize:28}}>🖼️</div>
+            <p style={{color:"var(--t3)",fontSize:15,margin:"6px 0 4px",fontWeight:600}}>タップして画像を選ぶ</p>
+            <p style={{color:"var(--t7)",fontSize:13,margin:0}}>PNG / JPG（写真アプリのスクショ）</p>
+          </div>
+          <p style={{fontSize:11,color:"var(--t9)",margin:0,lineHeight:1.7}}>※ 初回だけ読み取り用のデータ（約6MB）を取得します。2回目以降はすぐ動きます。</p>
+        </>}
+        {ocrL&&<div style={{padding:"30px 12px",textAlign:"center"}}>
+          <div style={{fontSize:30}}>🔍</div>
+          <p style={{color:"var(--t3)",fontSize:15,margin:"8px 0 10px",fontWeight:600}}>画像を読み取っています…</p>
+          <div style={{height:8,borderRadius:999,background:"rgba(var(--wrgb),0.08)",overflow:"hidden",maxWidth:240,margin:"0 auto"}}>
+            <div style={{height:"100%",width:`${Math.max(4,Math.round(ocrP*100))}%`,background:"linear-gradient(90deg,#9B59B6,#B07CC6)",borderRadius:999,transition:"width .3s"}}/>
+          </div>
+          <p style={{color:"var(--t8)",fontSize:12,margin:"10px 0 0"}}>初回は読み取りデータの取得に少し時間がかかります</p>
+        </div>}
+        {ocrErr&&<div style={{padding:10,borderRadius:8,background:"rgba(255,80,80,0.1)",color:"#FF6B6B",fontSize:14,lineHeight:1.7,marginBottom:8}}>❌ {ocrErr}</div>}
+        {ocrRaw&&!ocrRows&&<div style={{marginBottom:10,padding:"10px 12px",borderRadius:10,background:"rgba(var(--wrgb),0.04)",border:"1px dashed var(--bd)"}}>
+          <div style={{fontSize:12,color:"var(--t6)",fontWeight:700,marginBottom:4}}>🔍 読み取れた文字（うまくいかない時の手がかり）</div>
+          <div style={{fontSize:10,color:"var(--t8)",fontFamily:"monospace",whiteSpace:"pre-wrap",wordBreak:"break-all",maxHeight:150,overflow:"auto",lineHeight:1.6}}>{ocrRaw}</div>
+        </div>}
+        {ocrErr&&!ocrL&&<button onClick={()=>{sOcrErr("");sOcrRaw("");}} style={{width:"100%",background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",color:"var(--t6)",padding:"11px 0",borderRadius:10,fontSize:14,cursor:"pointer"}}>別の画像で試す</button>}
+        {/* 取り込みプレビュー: 種類・金額を直してから登録できる */}
+        {ocrRows&&(()=>{
+          const inc=ocrRows.filter((r:any)=>!r._skip&&Number(r.amount)>0);
+          const sum=inc.reduce((s:number,r:any)=>s+Number(r.amount),0);
+          const nUpd=inc.filter((r:any)=>ocrTarget(r)).length;
+          return(<div>
+            <div style={{padding:"9px 12px",borderRadius:8,background:"rgba(155,89,182,0.1)",border:"1px solid rgba(155,89,182,0.25)",fontSize:13,color:"#B07CC6",fontWeight:600,marginBottom:6}}>
+              📋 {inc.length}件・合計¥{sum.toLocaleString()}を登録します{nUpd>0?`（うち${nUpd}件は既存の更新）`:""}
+            </div>
+            <p style={{fontSize:12,color:"var(--t7)",margin:"0 0 8px",lineHeight:1.7}}>読み取りの誤りは<b style={{color:"var(--t4)"}}>ここで直せます</b>（種類・金額をタップ）。チェックを外すと登録しません。<b style={{color:"#B07CC6"}}>同じ種類・同じ控えの資産がすでにあれば、増やさずに金額だけ更新</b>されるので、毎月このまま撮り直すだけで推移が残ります。</p>
+            <div style={{maxHeight:320,overflow:"auto",border:"1px solid rgba(var(--wrgb),0.06)",borderRadius:10,padding:"2px 8px",marginBottom:10}}>
+              {ocrRows.map((r:any,i:number)=>{
+                const hit=ocrTarget(r);
+                return(<div key={i} style={{padding:"8px 0",borderBottom:"1px solid rgba(var(--wrgb),0.04)",opacity:r._skip?0.4:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <input type="checkbox" checked={!r._skip} onChange={()=>ocrToggle(i)} aria-label="この資産を登録する" style={{accentColor:"#9B59B6",flexShrink:0,margin:0,width:18,height:18}}/>
+                    <select value={r.type} onChange={(e)=>{const t=e.target.value;const lbl=AT.find(x=>x.id===t)?.l||"";ocrSet(i,"type",t);if(!r.matched)ocrSet(i,"note",lbl);}} aria-label="資産の種類" disabled={!!r._skip}
+                      style={{flex:1,minWidth:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid "+(r.matched?"var(--bd)":"rgba(255,179,71,0.5)"),borderRadius:6,color:"var(--t3)",fontSize:13,padding:"5px 4px",outline:"none"}}>
+                      {AT.map(a=><option key={a.id} value={a.id}>{a.i}{a.l}</option>)}
+                    </select>
+                    <span style={{flexShrink:0,fontSize:11,fontWeight:700,color:hit?"#3498DB":"#2ECC71"}}>{hit?"更新":"新規"}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5,paddingLeft:24}}>
+                    <span style={{color:"var(--t8)",fontSize:12,flexShrink:0}}>¥</span>
+                    <input type="text" inputMode="numeric" value={Number(r.amount||0).toLocaleString()} onChange={(e)=>ocrSet(i,"amount",e.target.value.replace(/[^\d]/g,""))} disabled={!!r._skip} aria-label="金額"
+                      style={{width:118,flexShrink:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:6,color:"var(--t1)",fontSize:14,fontFamily:"monospace",fontWeight:600,padding:"5px 6px",outline:"none"}}/>
+                    <input type="text" value={r.note} onChange={(e)=>ocrSet(i,"note",e.target.value)} disabled={!!r._skip} placeholder="控え（口座名など）" aria-label="控え"
+                      style={{flex:1,minWidth:0,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",borderRadius:6,color:"var(--t5)",fontSize:12,padding:"5px 6px",outline:"none"}}/>
+                  </div>
+                  {!r.matched&&<div style={{fontSize:11,color:"#FFB347",marginTop:4,paddingLeft:24,lineHeight:1.6}}>⚠️ 種類を判別できませんでした（画像の文字: 「{r.label}」）。種類を選んでチェックを入れると登録できます。</div>}
+                </div>);})}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={commitShot} disabled={inc.length===0} style={{flex:2,background:inc.length===0?"rgba(var(--wrgb),0.08)":"linear-gradient(135deg,#9B59B6,#8E44AD)",border:"none",color:inc.length===0?"var(--t9)":"#fff",padding:"11px 0",borderRadius:10,fontSize:15,cursor:inc.length===0?"default":"pointer",fontWeight:700}}>✅ {inc.length}件を登録</button>
+              <button onClick={()=>{sOcrRows(null);sOcrErr("");sOcrRaw("");}} style={{flex:1,background:"rgba(var(--wrgb),0.05)",border:"1px solid var(--bd)",color:"var(--t6)",padding:"11px 0",borderRadius:10,fontSize:14,cursor:"pointer"}}>やり直す</button>
+            </div>
+          </div>);
+        })()}
       </BS>
 
       {/* ── 目標別つみたての追加/編集 ── */}
